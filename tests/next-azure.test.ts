@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { azureClearSchema, azureGenerationSchema, azureSaveSchema, normalizeAzureEndpoint } from '../lib/server/azure-policy';
+import { azureClearSchema, azureGenerationSchema, azureRequestError, azureSaveSchema, normalizeAzureEndpoint } from '../lib/server/azure-policy';
 
 const orgId = '00000000-0000-4000-8000-000000000001';
 const fields = {
@@ -46,4 +46,27 @@ test('Azure validates generation input before charging or sending it to the prov
     assert.equal(azureGenerationSchema.safeParse({ orgId, prompt }).success, false);
   }
   assert.equal(azureGenerationSchema.safeParse({ orgId, prompt: 'ventas', endpoint: 'https://evil.invalid' }).success, false);
+});
+test('Azure explains rejected request parameters without forwarding upstream messages', () => {
+  for (const [param, expected] of [
+    ['model', /nombre exacto del deployment/], ['text.format', /formato JSON/], ['text.format.type', /formato JSON/],
+    ['input', /JSON explícitamente/], ['instructions', /parámetro instructions/],
+    ['max_output_tokens', /límites de salida/], ['store', /sin almacenar/],
+  ] as const) {
+    const message = azureRequestError(400, { error: { param, code: 'unsupported_parameter', message: fields.apiKey } });
+    assert.match(message, /HTTP 400/); assert.match(message, expected); assert.ok(!message.includes(fields.apiKey));
+  }
+  assert.match(azureRequestError(400, { error: { code: 'OperationNotSupported' } }), /no admite esta operación/);
+  assert.match(azureRequestError(400, { error: { code: 'unsupported_model' } }), /no admite esta operación/);
+  assert.match(azureRequestError(400, { error: { code: 'DeploymentNotFound' } }), /nombre exacto de un deployment/);
+  assert.match(azureRequestError(404, null), /recurso correcto/);
+});
+test('Azure keeps unknown and malformed error details private', () => {
+  for (const value of [
+    null, [], 'not JSON', { error: fields.apiKey }, { message: fields.apiKey },
+    { error: { code: fields.apiKey, param: fields.apiKey, message: fields.apiKey } },
+    { error: { code: { secret: fields.apiKey }, param: ['model'], message: fields.apiKey } },
+  ]) {
+    assert.equal(azureRequestError(400, value), 'Azure rechazó la solicitud (HTTP 400). Revisa el endpoint, el modelo desplegado y su compatibilidad con Responses y JSON.');
+  }
 });
