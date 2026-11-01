@@ -396,7 +396,8 @@ async function main() {
         await page.getByRole('button', { name: 'ES / EN', exact: true }).click();
         await page.getByRole('link', { name: 'Enter the hub', exact: true }).first().waitFor();
         await page.getByRole('button', { name: 'Data and privacy', exact: true }).click();
-        await page.getByRole('dialog').getByText(/business data is stored in InsForge/).waitFor();
+        await page.getByRole('dialog').getByText(/Business data is protected by organization-scoped permissions/).waitFor();
+        assert.doesNotMatch(await page.getByRole('dialog').innerText(), /InsForge/i);
         assert.deepEqual(datasetRequests, []);
         for (const pathname of ['/data.json', '/Old/index.html', '/my-flow.html']) {
           assert.equal((await page.request.get(base + pathname)).status(), 404, pathname);

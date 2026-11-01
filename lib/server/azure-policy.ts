@@ -14,6 +14,38 @@ export function normalizeAzureEndpoint(value: string): string {
   return `${endpoint.origin}/openai/v1/responses`;
 }
 
+const azureErrorSchema = z.object({
+  error: z.object({ code: z.unknown().optional(), param: z.unknown().optional() }),
+});
+export function azureRequestError(status: number, value: unknown): string {
+  const prefix = `Azure rechazó la solicitud (HTTP ${status}).`;
+  const parsed = azureErrorSchema.safeParse(value);
+  const error = parsed.success ? parsed.data.error : undefined;
+  if (status === 404 || error?.code === 'DeploymentNotFound' || error?.code === 'model_not_found') {
+    return `${prefix} Comprueba que el endpoint corresponde al recurso correcto y que «Modelo desplegado» contiene el nombre exacto de un deployment de ese recurso.`;
+  }
+  if (error?.code === 'OperationNotSupported' || error?.code === 'unsupported_model') {
+    return `${prefix} El modelo desplegado no admite esta operación. Usa un deployment compatible con Azure Responses v1 y JSON mode.`;
+  }
+  switch (error?.param) {
+    case 'model':
+      return `${prefix} Revisa «Modelo desplegado»: debe ser el nombre exacto del deployment en este recurso de Azure, no la URL ni el nombre del recurso.`;
+    case 'text.format':
+    case 'text.format.type':
+      return `${prefix} El modelo desplegado rechazó el formato JSON (text.format). Usa un deployment compatible con Responses v1 y JSON mode.`;
+    case 'input':
+      return `${prefix} Azure rechazó el contenido de input. La entrada debe pedir JSON explícitamente y respetar los límites del modelo.`;
+    case 'instructions':
+      return `${prefix} El modelo desplegado rechazó el parámetro instructions. Comprueba su compatibilidad con Azure Responses v1.`;
+    case 'max_output_tokens':
+      return `${prefix} Azure rechazó max_output_tokens. Revisa los límites de salida del modelo desplegado.`;
+    case 'store':
+      return `${prefix} Azure rechazó store:false. Comprueba que el recurso admite Responses sin almacenar las respuestas.`;
+    default:
+      return `${prefix} Revisa el endpoint, el modelo desplegado y su compatibilidad con Responses y JSON.`;
+  }
+}
+
 export const azureOrganizationSchema = z.uuid();
 export const azureVersionSchema = z.number().int().min(0).max(2147483647);
 export const azureSaveSchema = z.object({
