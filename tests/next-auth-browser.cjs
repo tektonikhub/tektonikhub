@@ -484,16 +484,86 @@ async function main() {
         } finally { await other.close(); }
       }
     });
+    await run('Minimal Studio verifies the organization LLM, exposes its tooltip and attaches removable file references from the top bar', async () => {
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'developer');
+        let connection = 'configured', release, notify;
+        const statusResponse = configured => ({ available: true, configured, endpoint: 'https://synthetic.openai.azure.com', deployment: 'synthetic-model', apiVersion: '2024-10-21', storage: 'server-memory' });
+        await page.route('**/api/llm/settings?**', async route => {
+          assert.equal(new URL(route.request().url()).searchParams.get('orgId'), orgId);
+          if (connection === 'pending') {
+            notify();
+            await new Promise(resolve => { release = resolve; });
+          }
+          await route.fulfill({ status: connection === 'unavailable' ? 503 : 200, json: connection === 'unavailable' ? { error: 'Unavailable' } : statusResponse(connection === 'configured') });
+        });
+        await page.goto(base + '/studio');
+        const dot = page.locator('.studio-connection-dot'), indicator = page.locator('.studio-connection-button');
+        await page.waitForFunction(() => document.querySelector('.studio-connection-dot')?.dataset.state === 'configured');
+        assert.equal(await dot.evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(21, 128, 61)');
+        await indicator.hover();
+        const tooltip = page.getByRole('tooltip');
+        assert.equal(await tooltip.isVisible(), true);
+        assert.equal(await tooltip.innerText(), 'El LLM de la organización está correctamente configurado.');
+        await page.mouse.move(0, 0); await indicator.focus();
+        assert.equal(await tooltip.isVisible(), true);
+        assert.equal(await page.locator('.studio-next .page-heading, .studio-files, .studio-history, .studio-starters').count(), 0);
+        assert.equal(await page.getByRole('heading', { name: 'De idea a herramienta', exact: true }).count(), 0);
+        assert.equal(await page.getByRole('button', { name: /Exportar.*JSON/ }).count(), 0);
+        assert.match(await page.locator('.studio-top-status').innerText(), /Nuevo borrador/);
+        const toolbar = await page.locator('.studio-toolbar').boundingBox(), add = await page.getByRole('button', { name: 'Añadir ficheros', exact: true }).boundingBox();
+        assert.ok(add.x > toolbar.x + toolbar.width / 2, 'File control should be on the right');
+        const chooser = page.waitForEvent('filechooser');
+        await page.getByRole('button', { name: 'Añadir ficheros', exact: true }).click();
+        await (await chooser).setFiles({ name: 'design.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic reference content not imported') });
+        await page.getByRole('button', { name: 'Quitar design.txt', exact: true }).waitFor();
+        assert.match(await page.locator('.studio-attachments').innerText(), /Solo referencias/);
+        const key = `blkunit:studio:v1:${orgId}:${accounts[0].id}:new`;
+        await page.waitForFunction(key => JSON.parse(localStorage.getItem(key) || '{}').files?.length === 1, key);
+        const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
+        assert.deepEqual(saved.files, [{ name: 'design.txt', type: 'text/plain', size: 40 }]);
+        assert.equal(JSON.stringify(saved).includes('Synthetic reference content'), false);
+        await page.getByRole('button', { name: 'Quitar design.txt', exact: true }).click();
+        await page.locator('.studio-attachments').waitFor({ state: 'hidden' });
+        connection = 'unconfigured'; await indicator.click();
+        await page.waitForFunction(() => document.querySelector('.studio-connection-dot')?.dataset.state === 'unconfigured');
+        assert.match(await indicator.getAttribute('aria-label'), /aún no está configurado/);
+        connection = 'pending';
+        const pending = new Promise(resolve => { notify = resolve; });
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        await pending;
+        assert.equal(await dot.getAttribute('data-state'), 'checking', 'Never retain a stale green light during a refresh');
+        connection = 'unavailable'; release();
+        await page.waitForFunction(() => document.querySelector('.studio-connection-dot')?.dataset.state === 'unavailable');
+        assert.match(await indicator.getAttribute('aria-label'), /No se pudo comprobar/);
+        connection = 'configured'; await indicator.click();
+        await page.waitForFunction(() => document.querySelector('.studio-connection-dot')?.dataset.state === 'configured');
+        await page.setViewportSize({ width: 375, height: 812 });
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        await indicator.focus();
+        const bounds = await tooltip.boundingBox();
+        assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 375, 'Tooltip should fit the mobile viewport');
+        await page.getByRole('button', { name: 'Herramienta', exact: true }).click();
+        await page.getByRole('tab', { name: 'Preview', exact: true }).waitFor();
+        await page.getByRole('button', { name: 'Conversación', exact: true }).click();
+        await page.getByRole('button', { name: 'Nuevo borrador', exact: true }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Cancelar', exact: true }).click();
+        await page.locator('#promptInput').fill('Una nueva descripción');
+      } finally { await ctx.close(); }
+    });
     await run('Fresh-browser Studio restores stored HTML, data, provenance and attachments before submitting the original ticket', async () => {
       const ctx = await context();
       try {
         const page = await ctx.newPage(); await login(page, 'developer');
         await page.goto(`${base}/studio?edit=${sourceId(0)}`);
+        await page.getByLabel('Más opciones de la vista previa', { exact: true }).click();
         await page.getByRole('button', { name: 'Crear rama', exact: true }).waitFor();
         await page.waitForFunction(() => !document.querySelector('#versionSelect')?.disabled);
         await page.getByRole('tab', { name: 'Código HTML', exact: true }).click();
         assert.equal(await page.locator('#codePanel code').textContent(), sourceHtml);
-        assert.match(await page.getByText(/reference.csv ·/).innerText(), /text\/csv/);
+        assert.match(await page.locator('.studio-attachments li').getAttribute('title'), /text\/csv/);
+        await page.getByRole('button', { name: 'Quitar reference.csv', exact: true }).waitFor();
         const sandbox = page.locator('#previewFrame');
         assert.equal(await sandbox.getAttribute('sandbox'), 'allow-scripts');
         assert.match(await sandbox.getAttribute('srcdoc'), /connect-src 'none'/);
@@ -547,7 +617,7 @@ async function main() {
         sourceVersion = 3;
         await page.goto(`${base}/studio?edit=${sourceId(6)}`);
         await page.getByText(/Este envío no contiene HTML generado/).waitFor();
-        assert.equal(await page.getByLabel(/^Tipo de herramienta/).isEnabled(), true);
+        assert.equal(await page.getByLabel('Describe tu primera idea', { exact: true }).isEnabled(), true);
       } finally { sourceReadFailure = false; sourceVersion = 3; await ctx.close(); }
     });
     await run('Corrupt local edit stays protected and a delayed source cannot overwrite a different ticket', async () => {

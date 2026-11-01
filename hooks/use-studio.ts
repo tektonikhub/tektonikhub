@@ -7,16 +7,37 @@ import { checkAbort, dashboardFromHTML, generatedDocument, provenanceFromHTML, i
 import { llm } from '@/lib/studio/llm';
 import { loadSubmissionSource } from '@/lib/studio/source';
 import type { App, SubmissionFields } from '@/lib/domain/types';
-import type { DashboardKit, Provider, StudioDraft, StudioEngine, StudioKind, StudioPersistence, StudioScope } from '@/lib/studio/types';
+import type { DashboardKit, StudioDraft, StudioEngine, StudioPersistence, StudioScope } from '@/lib/studio/types';
+type LLMConnection = {orgId:string;userId:string;revision:number;status:'checking'|'configured'|'unconfigured'|'unavailable';message:string};
 export function downloadText(text:string,name:string,type='text/html;charset=utf-8'){
   const url=URL.createObjectURL(new Blob([text],{type}));const anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 export function useStudio(){
   const blk=useBLK(), router=useRouter(), searchParams=useSearchParams();
   const editId=searchParams.get('edit')||undefined;
-  const [draft,setDraft]=useState<StudioDraft>(blankDraft),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saveState,setSaveState]=useState('Cargando borrador…'),[storageBlocked,setStorageBlocked]=useState(false),[editing,setEditing]=useState<App|null>(null),[kind,setKind]=useState<StudioKind>('dashboard'),[provider,setProvider]=useState<Provider>('demo'),[azureConfigured,setAzureConfigured]=useState(false),[azureStatus,setAzureStatus]=useState('Azure es opcional y requiere servidor local.'),[checking,setChecking]=useState(false),[allowDataChanges,setAllowDataChanges]=useState(false),[activity,setActivity]=useState(''),[initialization,setInitialization]=useState(0);
-  const draftRef=useRef(draft),runtime=useRef<{engine:StudioEngine;kit:DashboardKit}|null>(null),persistence=useRef<StudioPersistence|null>(null),scope=useRef<StudioScope|null>(null),blocked=useRef(false),job=useRef<AbortController|null>(null),sessionRevision=useRef(0),saveQueue=useRef<Promise<void>>(Promise.resolve()),editingRef=useRef<App|null>(null),checkingRef=useRef(false);
+  const [draft,setDraft]=useState<StudioDraft>(blankDraft),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saveState,setSaveState]=useState('Cargando borrador…'),[storageBlocked,setStorageBlocked]=useState(false),[editing,setEditing]=useState<App|null>(null),[allowDataChanges,setAllowDataChanges]=useState(false),[generationStatus,setGenerationStatus]=useState(''),[initialization,setInitialization]=useState(0);
+  const draftRef=useRef(draft),runtime=useRef<{engine:StudioEngine;kit:DashboardKit}|null>(null),persistence=useRef<StudioPersistence|null>(null),scope=useRef<StudioScope|null>(null),blocked=useRef(false),job=useRef<AbortController|null>(null),sessionRevision=useRef(0),saveQueue=useRef<Promise<void>>(Promise.resolve()),editingRef=useRef<App|null>(null);
   const orgId=blk.org?.id,userId=blk.user?.id;
+  const [llmConnection,setLLMConnection]=useState<LLMConnection|null>(null),[llmRevision,setLLMRevision]=useState(0);
+  const refreshLLM=useCallback(()=>setLLMRevision(revision=>revision+1),[]);
+  useEffect(()=>{
+    if(!orgId||!userId)return;
+    const controller=new AbortController();
+    const timer=setTimeout(async()=>{
+      setLLMConnection({orgId,userId,revision:llmRevision,status:'checking',message:'Comprobando el LLM de la organización…'});
+      try{
+        const result=await llm.status(orgId,AbortSignal.any([controller.signal,AbortSignal.timeout(10_000)]),'No se pudo comprobar el LLM de la organización. Pulsa para reintentar.');
+        if(controller.signal.aborted)return;
+        setLLMConnection({orgId,userId,revision:llmRevision,status:result.configured?'configured':'unconfigured',message:result.configured?'El LLM de la organización está correctamente configurado.':'El LLM de la organización aún no está configurado. Contacta con IT.'});
+      }catch(statusError){
+        if(controller.signal.aborted)return;
+        setLLMConnection({orgId,userId,revision:llmRevision,status:'unavailable',message:statusError instanceof Error?statusError.message:'No se pudo comprobar el LLM de la organización. Pulsa para reintentar.'});
+      }
+    },0);
+    window.addEventListener('focus',refreshLLM);
+    return()=>{clearTimeout(timer);controller.abort();window.removeEventListener('focus',refreshLLM);};
+  },[orgId,userId,llmRevision,refreshLLM]);
+  const connection=llmConnection?.orgId===orgId&&llmConnection?.userId===userId&&llmConnection?.revision===llmRevision?llmConnection:{status:'checking' as const,message:'Comprobando el LLM de la organización…'};
   const update=useCallback((next:StudioDraft)=>{draftRef.current=next;setDraft(next);},[]);
   const persist=useCallback((next:StudioDraft)=>{
     const adapter=persistence.current,currentScope=scope.current,revision=sessionRevision.current;
@@ -25,7 +46,7 @@ export function useStudio(){
     saveQueue.current=saveQueue.current.catch(()=>{}).then(async()=>{
       if(revision!==sessionRevision.current||blocked.current)return;
       try{await adapter.save(currentScope,next);if(revision===sessionRevision.current)setSaveState('✓ Guardado en este navegador');}
-      catch{if(revision===sessionRevision.current){blocked.current=true;setStorageBlocked(true);setSaveState('Sin guardar · exporta antes de salir');setError('No se pudo guardar. El borrador sigue en memoria; exporta HTML o JSON. Reintenta el almacenamiento antes de salir.');}}
+      catch{if(revision===sessionRevision.current){blocked.current=true;setStorageBlocked(true);setSaveState('Sin guardar · exporta antes de salir');setError('No se pudo guardar. El borrador sigue en memoria; exporta el HTML y reintenta el almacenamiento antes de salir.');}}
     });
   },[]);
   const commit=useCallback((next:StudioDraft)=>{update(next);persist(next);},[update,persist]);
@@ -37,7 +58,7 @@ export function useStudio(){
     editingRef.current=edit||null;
     (async()=>{
       await Promise.resolve();if(revision!==sessionRevision.current)return;
-      update(blankDraft());setReady(false);setBusy(false);setError('');blocked.current=false;setStorageBlocked(false);setSaveState('Cargando borrador…');setAzureConfigured(false);setProvider('demo');setAllowDataChanges(false);setChecking(false);checkingRef.current=false;setEditing(edit||null);
+      update(blankDraft());setReady(false);setBusy(false);setError('');blocked.current=false;setStorageBlocked(false);setSaveState('Cargando borrador…');setAllowDataChanges(false);setGenerationStatus('');setEditing(edit||null);
       try{
         if(editId&&(!edit||edit.reviewStatus!=='changes_requested'))throw new Error('Solo puedes editar tus propios envíos con cambios solicitados.');
         const engines=await loadEngines();if(revision!==sessionRevision.current)return;runtime.current=engines;
@@ -61,48 +82,39 @@ export function useStudio(){
             }
           }
         }
-        update(next);setKind(next.versions.find(v=>v.id===next.selectedId)?.spec.kind||'dashboard');setReady(true);setSaveState(blocked.current?'Restauración fallida · original protegido':next.versions.length?'✓ Borrador restaurado':'Nuevo borrador · sin cambios');
+        update(next);setReady(true);setSaveState(blocked.current?'Restauración fallida · original protegido':next.versions.length?'Borrador restaurado':'Nuevo borrador');
       }catch(initError){if(revision!==sessionRevision.current)return;setError(initError instanceof Error?initError.message:'No se pudo abrir Studio.');setSaveState('No se pudo abrir el borrador');}
     })();
     return()=>{sessionRevision.current=revision+1;job.current?.abort();};
   // Data updates after submission must not replace the active draft or expectedVersion.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[orgId,userId,editId,initialization,update]);
-  const refreshAzure=useCallback(async()=>{
-    if(!orgId||checkingRef.current)return;const revision=sessionRevision.current;checkingRef.current=true;setChecking(true);
-    try{const status=await llm.status(orgId);if(revision!==sessionRevision.current)return;setAzureConfigured(status.configured);setAzureStatus(status.configured?'Azure disponible · cada petición consume cuota.':'Servidor disponible. Configura Azure desde Administración → LLM Settings.');}
-    catch(statusError){if(revision!==sessionRevision.current)return;setAzureConfigured(false);setAzureStatus(statusError instanceof Error?statusError.message:'Azure no disponible.');}
-    finally{if(revision===sessionRevision.current){checkingRef.current=false;setChecking(false);}}
-  },[orgId]);
-  useEffect(()=>{if(!ready)return;const timer=setTimeout(()=>void refreshAzure(),0);return()=>clearTimeout(timer);},[ready,refreshAzure]);
   useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(job.current||blocked.current){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[]);
   const generate=async(raw:string)=>{
     const prompt=raw.trim(),engines=runtime.current;if(!ready||job.current||!engines||!orgId)return;
     if(!prompt||prompt.length>2000){setError('Describe tu idea en 1–2000 caracteres.');return;}
-    if(provider==='azure-openai'&&(!azureConfigured||kind!=='dashboard')){setError(kind!=='dashboard'?'Azure solo compone dashboards JSON. Selecciona demo para otras herramientas.':'Configura o activa Azure local. No cambiamos automáticamente al modo demo.');return;}
     const controller=new AbortController(),revision=sessionRevision.current;job.current=controller;setBusy(true);setError('');
-    const initial=draftRef.current,previous=initial.versions.find(v=>v.id===initial.selectedId),    selectedProvider=provider,selectedKind=kind,authorizedDataChanges=allowDataChanges;setAllowDataChanges(false);
+    const initial=draftRef.current,previous=initial.versions.find(v=>v.id===initial.selectedId),authorizedDataChanges=allowDataChanges;setAllowDataChanges(false);
     commit({...initial,messages:[...initial.messages,{role:'user' as const,text:prompt}].slice(-MAX_MESSAGES)});
     try{
-      setActivity(selectedProvider==='demo'?'Interpretando plantilla local…':'Esperando configuración JSON de Azure (sin streaming)…');await waitForGeneration(controller.signal);
-      let spec=specForKind(engines.engine,prompt,selectedKind,previous?.spec||null),model:string|undefined;
-      if(spec.kind==='dashboard'){
-        const prior=previous?.spec.dashboard||null;
-        const config=selectedProvider==='azure-openai'?await llm.generate(orgId,prompt,prior,engines.kit,controller.signal,authorizedDataChanges):{config:engines.kit.validate(engines.kit.createConfig(prompt,prior)),model:undefined};
-        spec=withDashboard(spec,engines.kit.validate(config.config));model=config.model;
-      }
-      checkAbort(controller.signal);setActivity('Validando y renderizando HTML offline…');await waitForGeneration(controller.signal);
-      const html=generatedDocument(spec.dashboard?engines.kit.renderHTML(spec.dashboard):engines.engine.renderHTML(spec),selectedProvider,model);
+      setGenerationStatus('Generando a partir de tu descripción…');
+      const prior=previous?.spec.dashboard||null;
+      if(previous&&!prior)throw new Error('Esta versión antigua no es un dashboard compatible. Exporta tu trabajo y reinicia el borrador antes de crear con el LLM.');
+      const result=await llm.generate(orgId,prompt,prior,engines.kit,controller.signal,authorizedDataChanges);
+      const config=engines.kit.validate(result.config),model=result.model;
+      const spec=withDashboard(specForKind(engines.engine,prompt,'dashboard',previous?.spec||null),config);
+      checkAbort(controller.signal);setGenerationStatus('Preparando la vista previa…');await waitForGeneration(controller.signal);
+      const html=generatedDocument(engines.kit.renderHTML(config),'azure-openai',model);
       checkAbort(controller.signal);if(revision!==sessionRevision.current)return;
-      const explanation=selectedProvider==='azure-openai'?`Dashboard compuesto con Azure (${model}): ${spec.dashboard?.components.length} componentes validados. Datos ficticios; el renderer Tektonik hub genera el HTML, no ejecuta código del modelo.`:`${engines.engine.explainChanges(previous?.spec||null,spec)} Demo determinista: reconoce plantillas, temas, colores y componentes compatibles; no IA real ni conexiones de datos.`;
-      commit(addVersion(draftRef.current,{spec,html,provider:selectedProvider,...(model?{model}:{}),createdAt:new Date().toISOString(),...(previous?{parentId:previous.id}:{})},explanation));setKind(spec.kind);
+      const explanation=`Dashboard creado a partir de tu descripción: ${config.components.length} componentes validados. Revisa la vista previa y describe los cambios que necesites. Los datos son sintéticos y el HTML está aislado, sin conexión a la red.`;
+      commit(addVersion(draftRef.current,{spec,html,provider:'azure-openai',model,createdAt:new Date().toISOString(),...(previous?{parentId:previous.id}:{})},explanation));
     }catch(generationError){
       if(revision!==sessionRevision.current)return;
       const aborted=generationError instanceof Error&&generationError.name==='AbortError';const message=aborted?'Generación detenida. La última versión completa se conserva.':`No se creó ninguna versión: ${generationError instanceof Error?generationError.message:'error inesperado'}. La versión anterior se conserva.`;
-      if(!aborted)setError(message);commit({...draftRef.current,messages:[...draftRef.current.messages,{role:'assistant' as const,text:message.slice(0,4000)}].slice(-MAX_MESSAGES),activity:[...(draftRef.current.activity||[]),{id:Date.now(),text:message.slice(0,1000),createdAt:new Date().toISOString()}].slice(-40)});
-    }finally{if(revision===sessionRevision.current){job.current=null;setBusy(false);setActivity('');}}
+      if(!aborted)setError(message);commit({...draftRef.current,messages:[...draftRef.current.messages,{role:'assistant' as const,text:message.slice(0,4000)}].slice(-MAX_MESSAGES)});
+    }finally{if(revision===sessionRevision.current){job.current=null;setBusy(false);setGenerationStatus('');}}
   };
-  const restore=(id:number)=>{if(busy)return;try{const next=restoreVersion(draftRef.current,id);setKind(next.versions.find(v=>v.id===id)?.spec.kind||'dashboard');commit(next);}catch(restoreError){setError(restoreError instanceof Error?restoreError.message:'No se pudo restaurar.');}};
+  const restore=(id:number)=>{if(busy)return;try{commit(restoreVersion(draftRef.current,id));}catch(restoreError){setError(restoreError instanceof Error?restoreError.message:'No se pudo restaurar.');}};
   const retryStorage=async()=>{
     const adapter=persistence.current,currentScope=scope.current,revision=sessionRevision.current,next=draftRef.current;
     if(!adapter||!currentScope||busy)return false;setBusy(true);
@@ -110,11 +122,11 @@ export function useStudio(){
     catch{if(revision===sessionRevision.current)setError('Almacenamiento todavía no disponible. Exporta el borrador antes de salir.');return false;}
     finally{if(revision===sessionRevision.current)setBusy(false);}
   };
-  const exportStored=()=>{try{if(!scope.current)return;const raw=localStorage.getItem(draftKey(scope.current));if(raw===null){setError('No existe un borrador almacenado.');return;}downloadText(raw,'studio-original.json','application/json');}catch{setError('No se pudo leer el almacenamiento. Puedes exportar el borrador en memoria.');}};
+  const exportStored=()=>{try{if(!scope.current)return;const raw=localStorage.getItem(draftKey(scope.current));if(raw===null){setError('No existe un borrador almacenado.');return;}downloadText(raw,'studio-original.json','application/json');}catch{setError('No se pudo leer el almacenamiento. Puedes exportar el HTML de la versión en memoria.');}};
   const reset=async()=>{
     const adapter=persistence.current,currentScope=scope.current,revision=sessionRevision.current;
     if(busy||!adapter||!currentScope)return false;setBusy(true);
-    try{await saveQueue.current;if(revision!==sessionRevision.current)return false;await adapter.remove(currentScope);if(revision!==sessionRevision.current)return false;blocked.current=false;setStorageBlocked(false);update(blankDraft());editingRef.current=null;setEditing(null);setKind('dashboard');setAllowDataChanges(false);setError('');setSaveState('Borrador reiniciado · aún sin guardar');if(editId){setReady(false);router.replace('/studio');}return true;}
+    try{await saveQueue.current;if(revision!==sessionRevision.current)return false;await adapter.remove(currentScope);if(revision!==sessionRevision.current)return false;blocked.current=false;setStorageBlocked(false);update(blankDraft());editingRef.current=null;setEditing(null);setAllowDataChanges(false);setError('');setSaveState('Borrador reiniciado · aún sin guardar');if(editId){setReady(false);router.replace('/studio');}return true;}
     catch{if(revision===sessionRevision.current)setError('No se pudo borrar el borrador. No se ha reiniciado el proyecto.');return false;}
     finally{if(revision===sessionRevision.current)setBusy(false);}
   };
@@ -125,7 +137,7 @@ export function useStudio(){
     setBusy(true);setError('');const revision=sessionRevision.current;
     try{
       const attachments=validateFiles([...(draftRef.current.files||[]).filter(file=>file.name!=='index.html'),{name:'index.html',type:'text/html',size:bytes(current.html)}],blk.data.config.upload.maxFiles,blk.data.config.upload.maxBytes);
-      const payload={...fields,attachments,generatedHtml:current.html,aiTool:current.provider==='azure-openai'?'Tektonik hub Studio · Azure OpenAI':'Tektonik hub Studio · demo local'};
+      const payload={...fields,attachments,generatedHtml:current.html,aiTool:'Tektonik hub Studio'};
       const result=await blk.action(()=>adapterEdit?blk.repository.updateSubmission(adapterEdit.id,payload,adapterEdit.expectedVersion):blk.repository.createSubmission(payload));
       if(revision!==sessionRevision.current)return false;
       if(!result.ok){setError('El envío a IT falló. No se ha marcado como enviado. Revisa los campos y, si hubo un cambio concurrente, vuelve a abrir el ticket tras exportar tu trabajo.');return false;}
@@ -133,5 +145,5 @@ export function useStudio(){
     }catch(submitError){if(revision===sessionRevision.current)setError(submitError instanceof Error?submitError.message:'No se pudo enviar a IT.');return false;}finally{if(revision===sessionRevision.current)setBusy(false);}
   };
   const current=draft.versions.find(v=>v.id===draft.selectedId)||null;
-  return {blk,draft,current,ready,busy,error,setError,saveState,storageBlocked,editing,kind,setKind,provider,setProvider,azureConfigured,azureStatus,checking,refreshAzure,allowDataChanges,setAllowDataChanges,activity,generate,stop:()=>job.current?.abort(),restore,branch:()=>{if(current&&!busy)try{commit(branchVersion(draftRef.current,current.id));}catch(error){setError(error instanceof Error?error.message:'No se pudo crear la rama.');}},reset,retryStorage,exportStored,setFiles,removeFile:(name:string)=>commit({...draftRef.current,files:(draftRef.current.files||[]).filter(file=>file.name!==name)}),submit,retryInitialization:()=>setInitialization(value=>value+1),exportDraft:()=>downloadText(JSON.stringify(draftRef.current,null,2),'studio-draft.json','application/json'),isolatedHTML};
+  return {blk,draft,current,ready,busy,error,setError,saveState,storageBlocked,editing,llmConnection:connection,refreshLLM,allowDataChanges,setAllowDataChanges,generationStatus,generate,stop:()=>job.current?.abort(),restore,branch:()=>{if(current&&!busy)try{commit(branchVersion(draftRef.current,current.id));}catch(error){setError(error instanceof Error?error.message:'No se pudo crear la rama.');}},reset,retryStorage,exportStored,setFiles,removeFile:(name:string)=>{if(!busy)commit({...draftRef.current,files:(draftRef.current.files||[]).filter(file=>file.name!==name)});},submit,retryInitialization:()=>setInitialization(value=>value+1),isolatedHTML};
 }

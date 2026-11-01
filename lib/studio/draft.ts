@@ -1,7 +1,7 @@
 import type { DashboardKit, FileMetadata, StudioDraft, StudioPersistence, StudioScope, StudioSpec, StudioVersion, StudioMessage } from './types';
 export const MAX_VERSIONS = 8, MAX_MESSAGES = 40, MAX_HTML_BYTES = 200_000, MAX_DRAFT_BYTES = 3_000_000;
 export const bytes = (text: string) => new TextEncoder().encode(text).length;
-export function blankDraft(): StudioDraft { return { schemaVersion: 1, messages: [], versions: [], selectedId: null, nextVersion: 1, submission: null, activity: [], files: [] }; }
+export function blankDraft(): StudioDraft { return { schemaVersion: 1, messages: [], versions: [], selectedId: null, nextVersion: 1, submission: null, files: [] }; }
 export function draftKey(scope: StudioScope) { return `blkunit:studio:v1:${scope.orgId}:${scope.userId}:${scope.editId || 'new'}`; }
 export function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 function text(value: unknown, max: number): value is string { return typeof value === 'string' && value.length <= max; }
@@ -37,7 +37,7 @@ export function parseDraft(raw: string, kit: Pick<DashboardKit, 'validate'>): St
     if (!record(message) || (message.role !== 'user' && message.role !== 'assistant') || !text(message.text,4000) || (message.versionId !== undefined && !integer(message.versionId))) throw new Error('Conversación inválida.');
     return {role:message.role,text:message.text,...(typeof message.versionId === 'number'?{versionId:message.versionId}:{})};
   });
-  const draft: StudioDraft = {schemaVersion:1,versions,messages,selectedId:value.selectedId as number|null,nextVersion:value.nextVersion,submission:null,files:validateFiles(value.files ?? []),activity:[]};
+  const draft: StudioDraft = {schemaVersion:1,versions,messages,selectedId:value.selectedId as number|null,nextVersion:value.nextVersion,submission:null,files:validateFiles(value.files ?? [])};
   if (value.submission != null) { const link=value.submission; if (!record(link) || !text(link.id,100) || !text(link.ticket,100) || !integer(link.versionId)) throw new Error('Ticket inválido.'); draft.submission={id:link.id,ticket:link.ticket,versionId:link.versionId}; }
   if (value.editing !== undefined) { const edit=value.editing; if (!record(edit)||!text(edit.id,100)||!text(edit.ticket,100)||!integer(edit.expectedVersion)) throw new Error('Edición inválida.'); draft.editing={id:edit.id,ticket:edit.ticket,expectedVersion:edit.expectedVersion}; }
   if (value.activity !== undefined) { if (!Array.isArray(value.activity)||value.activity.length>40) throw new Error('Actividad inválida.'); draft.activity=value.activity.map((item:unknown)=>{if(!record(item)||!integer(item.id)||!text(item.text,1000)||!text(item.createdAt,80)||!Number.isFinite(Date.parse(item.createdAt))||(item.versionId!==undefined&&!integer(item.versionId)))throw new Error('Actividad inválida.');return{id:item.id,text:item.text,createdAt:item.createdAt,...(typeof item.versionId==='number'?{versionId:item.versionId}:{})};}); }
@@ -46,7 +46,7 @@ export function parseDraft(raw: string, kit: Pick<DashboardKit, 'validate'>): St
 export function addVersion(draft: StudioDraft, version: Omit<StudioVersion,'id'>, explanation: string): StudioDraft {
   if (bytes(version.html)>MAX_HTML_BYTES) throw new Error('El HTML supera 200 KB.');
   const id=draft.nextVersion;
-  return {...draft,nextVersion:id+1,selectedId:id,versions:[...draft.versions,{...version,id}].slice(-MAX_VERSIONS),messages:[...draft.messages,{role:'assistant' as const,text:explanation.slice(0,4000),versionId:id}].slice(-MAX_MESSAGES),activity:[...(draft.activity||[]),{id:Date.now(),text:`v${id} completada · ${version.provider}`,createdAt:new Date().toISOString(),versionId:id}].slice(-40)};
+  return {...draft,nextVersion:id+1,selectedId:id,versions:[...draft.versions,{...version,id}].slice(-MAX_VERSIONS),messages:[...draft.messages,{role:'assistant' as const,text:explanation.slice(0,4000),versionId:id}].slice(-MAX_MESSAGES)};
 }
 export function restoreVersion(draft: StudioDraft, id: number): StudioDraft { if (!draft.versions.some(v=>v.id===id)) throw new Error('Versión no disponible.'); return {...draft,selectedId:id}; }
 export function branchVersion(draft: StudioDraft, id: number): StudioDraft {
