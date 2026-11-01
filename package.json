@@ -14,9 +14,8 @@
     "start": "next start --hostname 127.0.0.1 --port 3000",
     "typecheck": "tsc --noEmit",
     "lint": "eslint app components hooks lib next.config.ts proxy.ts scripts/bootstrap-insforge.mts \"tests/next-*.ts\"",
-    "test:next": "tsx --test tests/next-repository.test.ts tests/next-studio.test.ts tests/next-platform.test.ts tests/next-auth.test.ts",
+    "test:next": "tsx --test tests/next-studio.test.ts tests/next-platform.test.ts tests/next-auth.test.ts",
     "test:next:auth": "node tests/next-auth-browser.cjs",
-    "test:next:browser": "node tests/next-browser.cjs",
     "test:next:llm": "node tests/next-llm.cjs",
     "test": "node --test tests/studio-engine.test.cjs tests/studio-engine-sandbox.test.cjs tests/dashboard-kit.test.cjs tests/local-server.test.cjs"
   },

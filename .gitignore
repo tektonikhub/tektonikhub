@@ -8,6 +8,10 @@ coverage/
 !.env.example
 public/engines/
 public/data.json
+/Old/
+/old/
+/data.json
+/my-flow.html
 
 # InsForge & AI agent skills
 .insforge
