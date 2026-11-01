@@ -4,11 +4,12 @@ import type { Role } from '@/lib/domain/types';
 export const destinations: Record<Role, string> = {
   developer: '/profile', catalog: '/catalog', admin: '/admin', superadmin: '/super-admin',
 };
+export const studioRoles: readonly Role[] = ['developer', 'admin', 'superadmin'];
 const access: Record<string, readonly Role[]> = {
   '/profile': ['developer', 'catalog', 'admin', 'superadmin'],
   '/catalog': ['developer', 'catalog', 'admin', 'superadmin'],
   '/company': ['developer', 'catalog', 'admin', 'superadmin'],
-  '/studio': ['developer'],
+  '/studio': studioRoles,
   '/admin': ['admin', 'superadmin'],
   '/super-admin': ['superadmin'],
 };

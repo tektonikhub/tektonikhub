@@ -28,6 +28,8 @@ El flujo de trabajo comprende creación, envío a revisión, solicitud de cambio
 
 En `/login`, introducir usuario o correo y contraseña. El formulario ofrece recuperación y activación de cuenta. Tras autenticarse, cada persona accede únicamente a las rutas permitidas para su rol.
 
+Studio está disponible para `developer`, `admin` y `superadmin`, tanto desde la navegación como desde el perfil. Estos roles pueden crear, enviar y corregir sus propias aplicaciones de su organización; el rol `catalog` no tiene acceso. Se mantienen la revisión de IT y los controles de autor, organización, estado y versión.
+
 Si todavía no existe una cuenta inicial, el operador autorizado debe reservar su propia cuenta de superadministrador mediante:
 
 ```sh
@@ -66,7 +68,7 @@ La interfaz se centra en conversación y vista previa, sin encabezado grande ni 
 
 El proyecto cloud **`tektonik-hub`** está en **EU Central (`eu-central`)**. Su backend es `https://vxpd968k.eu-central.insforge.app`; se administra desde el [panel de InsForge](https://insforge.dev/dashboard/project/621de563-b6b4-4041-b541-579e6128a916).
 
-La fuente del esquema vigente es `migrations/20261101075915_identity-workspace.sql`, con 15 tablas de negocio, RPC autorizados y RLS. El diseño histórico de `database` no debe aplicarse sobre esta migración.
+El esquema base es `migrations/20261101075915_identity-workspace.sql`, con 15 tablas de negocio, RPC autorizados y RLS. `migrations/20261101180821_studio-admin-access.sql` amplía los permisos de envío y corrección a los administradores sin modificar el resto de los controles del RPC. El diseño histórico de `database` no debe aplicarse sobre estas migraciones.
 
 ## Despliegue
 

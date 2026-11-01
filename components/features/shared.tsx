@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import type { App, Dataset, JSONValue, Policy, ReviewAction, Role, User } from '@/lib/domain/types';
+import { studioRoles } from '@/lib/auth/policy';
 
 export const roleLabels: Record<Role, string> = { developer: 'Developer', catalog: 'Empleado', admin: 'Administrador', superadmin: 'Super administrador' };
 export const reviewStates = ['pending_review', 'changes_requested', 'rejected', 'approved'] as const;
@@ -73,7 +74,7 @@ export function AppDetails({ app: snapshot, onClose, catalog = false }: { app: A
 }
 export function AppEditor({ app, orgId, onClose }: { app: App | null; orgId: string; onClose: () => void }) {
   const { data, repository } = useBLK();
-  const authors = data.users.filter(user => user.orgId === orgId && user.role === 'developer' && user.enabled !== false && !user.deletedAt);
+  const authors = data.users.filter(user => user.orgId === orgId && studioRoles.includes(user.role) && user.enabled !== false && !user.deletedAt);
   return <MutationDialog title={app ? 'Editar aplicación' : 'Nueva aplicación'} onClose={onClose} onSubmit={fields => repository.saveManagedApp(app?.id || null, { orgId, authorId: String(fields.get('authorId')), title: String(fields.get('title')), desc: String(fields.get('desc')), area: String(fields.get('area')), tagline: String(fields.get('tagline')), aiTool: String(fields.get('aiTool')), repoUrl: String(fields.get('repoUrl')), impact: String(fields.get('impact')), dataNote: String(fields.get('dataNote')), hours: Number(fields.get('hours')), users: Number(fields.get('users')) }, app?.version)}>
     <p className="business-notice">Al guardar, vuelve a revisión y deja de publicarse hasta una nueva aprobación. Se conservan ticket, adjuntos e historial.{app && ` Editando v${app.version}.`}</p>
     <div className="form-grid">
@@ -89,7 +90,7 @@ export function AppEditor({ app, orgId, onClose }: { app: App | null; orgId: str
     <Field label="Descripción (mínimo 30 caracteres)" name="desc" multiline defaultValue={app?.desc} required minLength={30} maxLength={800} />
     <Field label="Impacto estimado" name="impact" defaultValue={app?.impact} maxLength={500} />
     <Field label="Nota de datos y riesgos" name="dataNote" multiline defaultValue={app?.dataNote} maxLength={2000} />
-    {!authors.length && <p role="alert">Añade primero un usuario Developer habilitado para asignar la aplicación.</p>}
+    {!authors.length && <p role="alert">Añade primero un creador habilitado con acceso a Studio para asignar la aplicación.</p>}
   </MutationDialog>;
 }
 export function ReviewDialog({ app, decision, onClose }: { app: App; decision: ReviewAction; onClose: () => void }) {

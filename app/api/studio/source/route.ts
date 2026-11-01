@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { authenticatedContext } from '@/lib/server/auth';
+import { studioRoles } from '@/lib/auth/policy';
 import { databaseError, errorResponse, HttpError, jsonResponse } from '@/lib/server/http';
 
 const querySchema = z.object({ appId: z.uuid(), version: z.coerce.number().int().positive().max(2147483647) }).strict();
@@ -9,7 +10,7 @@ const sourceSchema = z.object({ generated_html: z.string().max(300000).nullable(
 export async function GET(request: Request) {
   try {
     const { client, session } = await authenticatedContext();
-    if (session.role !== 'developer') throw new HttpError(403, 'Solo el creador puede recuperar un envío para corregirlo.');
+    if (!studioRoles.includes(session.role)) throw new HttpError(403, 'Solo el creador puede recuperar un envío para corregirlo.');
     const { appId, version } = querySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
     const app = await client.database.from('apps').select('version,review_status')
       .eq('id', appId).eq('org_id', session.orgId).eq('author_id', session.userId).is('deleted_at', null).maybeSingle();

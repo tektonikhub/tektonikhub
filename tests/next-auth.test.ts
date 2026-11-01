@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { destinations, identifierSchema, loginDestination, loginSchema, newPasswordSchema, rolesForPath, trustedOrigin, validResetLink } from '../lib/auth/policy';
 import { ApiError } from '../lib/data/http-client';
@@ -28,13 +29,26 @@ test('Post-login destinations are internal and enforce server-assigned roles', (
     }
     assert.equal(loginDestination(role, '/company'), '/company');
   }
-  assert.equal(loginDestination('developer', '/studio'), '/studio');
+  for (const role of ['developer', 'admin', 'superadmin'] as const) {
+    assert.equal(loginDestination(role, '/studio'), '/studio');
+  }
   assert.equal(loginDestination('catalog', '/studio'), '/catalog');
   assert.equal(loginDestination('developer', '/admin'), '/profile');
   assert.equal(loginDestination('admin', '/super-admin'), '/admin');
   assert.equal(loginDestination('superadmin', '/admin'), '/admin');
-  assert.deepEqual(rolesForPath('/studio'), ['developer']);
+  assert.deepEqual(rolesForPath('/studio'), ['developer', 'admin', 'superadmin']);
   assert.equal(rolesForPath('/unrecognized'), undefined);
+});
+
+test('Studio migration broadens only creator roles and preserves every existing command guard', () => {
+  const pattern = /CREATE(?: OR REPLACE)? FUNCTION public\.tk_command\([\s\S]*?\n\$\$;/;
+  const original = readFileSync(resolve('migrations', '20261101075915_identity-workspace.sql'), 'utf8').replace(/\r\n/g, '\n').match(pattern)?.[0];
+  const migration = readFileSync(resolve('migrations', '20261101180821_studio-admin-access.sql'), 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(original);
+  const expected = original.replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION')
+    .replace("actor.role <> 'developer'", "actor.role NOT IN ('developer', 'admin', 'superadmin')")
+    .replace("u.role = 'developer'", "u.role IN ('developer', 'admin', 'superadmin')");
+  assert.equal(migration.trim(), expected);
 });
 
 test('Auth mutations require the configured origin, with narrowly scoped development origins', () => {

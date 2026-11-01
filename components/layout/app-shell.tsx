@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode, type FormEvent } from 'rea
 import { Building2, Grid2X2, ShieldCheck, Sparkles, Users, Menu, Search, LogOut } from 'lucide-react';
 import { useBLK } from '@/hooks/use-blk';
 import { Button } from '@/components/ui/button';
+import { studioRoles } from '@/lib/auth/policy';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { data, user, org, repository, action, language, setLanguage } = useBLK();
@@ -25,7 +26,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pending = data.apps.filter(app => app.orgId === org?.id && app.reviewStatus === 'pending_review').length;
   const nav = [
     { href: '/catalog', label: 'Catálogo de apps', icon: Grid2X2, show: true },
-    { href: '/studio', label: 'Tektonik hub Studio', icon: Sparkles, show: user?.role === 'developer' },
+    { href: '/studio', label: 'Tektonik hub Studio', icon: Sparkles, show: Boolean(user && studioRoles.includes(user.role)) },
     { href: '/profile', label: 'Mi perfil y envíos', icon: Users, show: true },
     { href: '/company', label: 'Mi organización', icon: Building2, show: true },
     { href: '/admin', label: 'Oficina de IA', icon: ShieldCheck, show: ['admin', 'superadmin'].includes(user?.role ?? '') },

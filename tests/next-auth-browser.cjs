@@ -8,6 +8,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const roles = ['developer', 'catalog', 'admin', 'superadmin'];
+const studioRoles = ['developer', 'admin', 'superadmin'];
 const destinations = { developer: '/profile', catalog: '/catalog', admin: '/admin', superadmin: '/super-admin' };
 const password = 'Synthetic login password 123';
 const orgId = '00000000-0000-4000-8000-000000000001';
@@ -25,9 +26,9 @@ const kit = require(path.join(root, 'lib', 'studio', 'runtime', 'dashboard-kit.j
 const sourceConfig = kit.createConfig('Dashboard de operaciones con filtros y tabla');
 const sourceHtml = kit.renderHTML(sourceConfig).replace('</head>', '<meta name="blk-generator" content="azure-openai"><meta name="blk-model" content="synthetic-model"></head>');
 const sourceId = index => `00000000-0000-4000-8000-${String(300 + index).padStart(12, '0')}`;
-const sourceRows = Array.from({ length: 11 }, (_, index) => ({
+const sourceRows = Array.from({ length: 13 }, (_, index) => ({
   id: sourceId(index), org_id: index === 3 ? '00000000-0000-4000-8000-000000000099' : orgId,
-  author_id: index === 2 ? accounts[2].id : accounts[0].id,
+  author_id: index === 2 || index === 11 ? accounts[2].id : index === 12 ? accounts[3].id : accounts[0].id,
   deleted_at: index === 4 ? '2026-01-01T00:00:00Z' : null,
   version: index === 10 ? 4 : 3, review_status: index === 5 ? 'approved' : 'changes_requested',
   generated_html: index === 6 ? null : index === 9 ? 42 : index === 1 ? sourceHtml.replace('synthetic-model', 'second-model') : sourceHtml,
@@ -35,6 +36,7 @@ const sourceRows = Array.from({ length: 11 }, (_, index) => ({
 const referenceFile = { name: 'reference.csv', type: 'text/csv', size: 42 };
 let sourceVersion = 3, sourceReadFailure = false;
 const sourceReads = [], commands = [];
+const createdApps = [];
 let base, environment, next, browser, logs = '';
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -61,14 +63,14 @@ function workspace(account) {
     users: accounts.map(value => ({ id: value.id, orgId, role: value.role, name: `Synthetic ${value.role}`, initials: 'ST', dept: 'Testing',
       email: value.email, username: value.username, enabled: value.enabled, accountStatus: 'active', deletedAt: null })),
     plans: [{ id: planId, name: 'Initial', price: 0 }],
-    apps: [sourceRows[0], sourceRows[1], sourceRows[6]].map(row => ({
+    apps: [...[sourceRows[0], sourceRows[1], sourceRows[6], sourceRows[11], sourceRows[12]].map(row => ({
       id: row.id, orgId, authorId: row.author_id, title: 'Synthetic dashboard', area: 'operations',
       desc: 'Synthetic submission description with enough characters.', tagline: 'Synthetic summary', impact: 'Synthetic impact',
       dataNote: 'Original data note', repoUrl: '', tech: ['Studio'], tags: [], security: [],
       attachments: [{ name: 'index.html', type: 'text/html', size: Buffer.byteLength(sourceHtml) }, referenceFile],
       metrics: { hours: 0, users: 0, rating: '-' }, reviewStatus: 'changes_requested', maturity: 'new', version: 3,
       ticket: `APP-${row.id.slice(-4)}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', environment: '',
-    })),
+    })), ...createdApps],
     reviews: [], events: [], policies: [],
   };
 }
@@ -111,7 +113,7 @@ const backend = http.createServer(async (request, response) => {
     }
     if (['/api/database/records/apps', '/api/database/records/app_versions'].includes(url.pathname)) {
       assert.ok(account?.enabled && account.verified, 'Source must use the authenticated user token');
-      assert.equal(account.role, 'developer');
+      assert.ok(studioRoles.includes(account.role));
       assert.equal(url.searchParams.get('org_id'), `eq.${orgId}`);
       assert.equal(url.searchParams.get('author_id'), `eq.${account.id}`);
       const versions = url.pathname.endsWith('/app_versions');
@@ -146,13 +148,29 @@ const backend = http.createServer(async (request, response) => {
         return send(response, 200, { id: planId });
       }
       if (body.p_action === 'updateSubmission') {
-        assert.equal(account.role, 'developer');
-        assert.equal(body.p_id, sourceId(0));
-        if (body.p_version !== sourceVersion) return send(response, 409, { code: '40001', message: 'Synthetic concurrent version change' });
+        const row = sourceRows.find(row => row.id === body.p_id);
+        if (!studioRoles.includes(account.role) || !row || row.author_id !== account.id || row.org_id !== orgId || row.review_status !== 'changes_requested') {
+          return send(response, 403, { code: '42501', message: 'Synthetic unauthorized submission' });
+        }
+        if (body.p_version !== (row.id === sourceId(0) ? sourceVersion : row.version)) {
+          return send(response, 409, { code: '40001', message: 'Synthetic concurrent version change' });
+        }
         assert.equal(body.p_fields.generatedHtml, sourceHtml);
         assert.deepEqual(body.p_fields.attachments.filter(file => file.name !== 'index.html'), [referenceFile]);
         assert.equal(body.p_fields.dataNote, 'Original data note');
         return send(response, 200, { id: body.p_id });
+      }
+      if (body.p_action === 'createSubmission') {
+        if (!studioRoles.includes(account.role)) return send(response, 403, { code: '42501', message: 'Synthetic unauthorized submission' });
+        assert.equal(body.p_id, null);
+        assert.match(body.p_fields.generatedHtml, /name="blk-generator" content="azure-openai"/);
+        const id = sourceId(13 + createdApps.length);
+        createdApps.push({
+          ...workspace(account).apps[0], id, authorId: account.id, orgId,
+          title: body.p_fields.title, desc: body.p_fields.desc, area: body.p_fields.area,
+          attachments: body.p_fields.attachments, reviewStatus: 'pending_review', version: 1, ticket: `APP-${id.slice(-4)}`,
+        });
+        return send(response, 200, { id });
       }
       throw new Error(`Unexpected command ${body.p_action}`);
     }
@@ -450,6 +468,43 @@ async function main() {
         } finally { await ctx.close(); }
       }
     });
+    await run('Studio login, page guards, desktop/mobile navigation and profile links allow creators and admins but not catalog', async () => {
+      for (const role of roles) {
+        const ctx = await context();
+        try {
+          const page = await ctx.newPage();
+          const allowed = studioRoles.includes(role);
+          assert.equal(await login(page, role, '/studio'), allowed ? '/studio' : '/catalog');
+          const nav = page.getByRole('navigation', { name: 'Navegación principal', exact: true });
+          assert.equal(await nav.getByRole('link', { name: 'Tektonik hub Studio', exact: true }).count(), allowed ? 1 : 0);
+          await page.goto(base + '/studio');
+          await page.waitForURL(base + (allowed ? '/studio' : '/catalog'));
+          if (allowed) {
+            await page.getByTestId('studio-workspace').waitFor();
+            await page.waitForFunction(() => document.querySelector('#promptInput')?.disabled === false);
+            assert.equal(await page.getByRole('heading', { name: 'Acceso no disponible', exact: true }).count(), 0);
+            await page.reload();
+            await page.getByTestId('studio-workspace').waitFor();
+          }
+          await page.goto(base + '/profile');
+          assert.equal(await page.getByRole('link', { name: 'Crear aplicación', exact: true }).count(), allowed ? 1 : 0);
+          await page.getByRole('button', { name: 'Mis envíos', exact: true }).click();
+          assert.equal(await page.getByRole('link', { name: 'Corregir y reenviar', exact: true }).count(), role === 'developer' ? 3 : allowed ? 1 : 0);
+          if (allowed) {
+            await page.setViewportSize({ width: 375, height: 812 });
+            await page.getByRole('button', { name: 'Abrir navegación', exact: true }).click();
+            await nav.getByRole('link', { name: 'Tektonik hub Studio', exact: true }).click();
+            await page.waitForURL(base + '/studio');
+            await page.getByTestId('studio-workspace').waitFor();
+          }
+          if (role === 'admin' || role === 'superadmin') {
+            await page.goto(`${base}/profile?user=${accounts[0].id}`);
+            assert.equal(await page.getByRole('link', { name: 'Crear aplicación', exact: true }).count(), 0);
+            assert.equal(await page.getByRole('link', { name: 'Corregir y reenviar', exact: true }).count(), 0);
+          }
+        } finally { await ctx.close(); }
+      }
+    });
     await run('Studio source API enforces identity, author, tenant, status and immutable version with explicit failures', async () => {
       const guest = await fetch(`${base}/api/studio/source?appId=${sourceId(0)}&version=3`);
       assert.equal(guest.status, 401);
@@ -480,8 +535,67 @@ async function main() {
           const page = await other.newPage(); await login(page, role);
           const before = sourceReads.length;
           const response = await page.evaluate(async id => (await fetch(`/api/studio/source?appId=${id}&version=3`)).status, sourceId(0));
-          assert.equal(response, 403); assert.equal(sourceReads.length, before);
+          assert.equal(response, role === 'catalog' ? 403 : 404);
+          assert.equal(sourceReads.length, before + (role === 'catalog' ? 0 : 1));
+          if (role !== 'catalog') {
+            const id = sourceId(role === 'admin' ? 11 : 12);
+            const own = await page.evaluate(async id => {
+              const response = await fetch(`/api/studio/source?appId=${id}&version=3`);
+              return { status: response.status, body: await response.json() };
+            }, id);
+            assert.equal(own.status, 200);
+            assert.deepEqual(own.body, { appId: id, version: 3, generatedHtml: sourceHtml });
+          }
         } finally { await other.close(); }
+      }
+    });
+    await run('Admin and superadmin can correct and create their own Studio submissions without bypassing ownership or version checks', async () => {
+      for (const role of ['admin', 'superadmin']) {
+        const ctx = await context();
+        try {
+          const page = await ctx.newPage(); await login(page, role, '/profile');
+          await page.getByRole('button', { name: 'Mis envíos', exact: true }).click();
+          await page.getByRole('link', { name: 'Corregir y reenviar', exact: true }).click();
+          const id = sourceId(role === 'admin' ? 11 : 12);
+          await page.waitForURL(`${base}/studio?edit=${id}`);
+          await page.waitForFunction(() => document.querySelector('#versionSelect')?.disabled === false);
+          await page.getByRole('button', { name: 'Enviar a IT', exact: true }).click();
+          let dialog = page.getByRole('dialog');
+          await dialog.getByRole('button', { name: 'Enviar cambios a IT', exact: true }).click();
+          await dialog.getByText(/El envío se guardó/).waitFor();
+          const correction = commands.at(-1);
+          assert.equal(correction.p_action, 'updateSubmission'); assert.equal(correction.role, role);
+          assert.equal(correction.p_id, id); assert.equal(correction.p_version, 3);
+          assert.equal((await post(page, '/api/workspace', {
+            action: 'updateSubmission', id: sourceId(0), fields: correction.p_fields, version: 3,
+          })).status, 403);
+          assert.equal((await post(page, '/api/workspace', {
+            action: 'updateSubmission', id, fields: correction.p_fields, version: 2,
+          })).status, 409);
+          await page.route('**/api/session', route => route.fulfill({ status: 200, json: { csrf: 'a'.repeat(64) } }));
+          await page.route('**/api/studio/generate', async route => {
+            const body = route.request().postDataJSON();
+            assert.equal(body.orgId, orgId); assert.equal(body.previous, null);
+            await route.fulfill({ status: 200, json: { provider: 'azure-openai', model: 'synthetic-model', config: sourceConfig } });
+          });
+          await page.goto(base + '/studio');
+          await page.waitForFunction(() => document.querySelector('#promptInput')?.disabled === false);
+          await page.locator('#promptInput').fill('Dashboard de operaciones con filtros y tabla para mi organización');
+          await page.getByRole('button', { name: 'Generar herramienta', exact: true }).click();
+          await page.getByRole('button', { name: 'Enviar a IT', exact: true }).waitFor();
+          const html = await page.locator('#codePanel code').textContent();
+          await page.getByRole('button', { name: 'Enviar a IT', exact: true }).click();
+          dialog = page.getByRole('dialog');
+          await dialog.getByRole('button', { name: 'Enviar a IT', exact: true }).click();
+          await dialog.getByText(/El envío se guardó/).waitFor();
+          const submission = commands.at(-1), created = createdApps.at(-1);
+          assert.equal(submission.p_action, 'createSubmission'); assert.equal(submission.role, role);
+          assert.equal(submission.p_fields.generatedHtml, html);
+          assert.equal(created.authorId, accounts.find(account => account.role === role).id);
+          assert.equal(created.orgId, orgId); assert.equal(created.reviewStatus, 'pending_review');
+          await page.reload();
+          await page.getByRole('button', { name: 'Enviado a IT', exact: true }).waitFor();
+        } finally { await ctx.close(); }
       }
     });
     await run('Minimal Studio verifies the organization LLM, exposes its tooltip and attaches removable file references from the top bar', async () => {
@@ -694,6 +808,11 @@ async function main() {
         const page = await ctx.newPage(); await login(page, 'admin');
         await page.getByRole('button', { name: 'Editar', exact: true }).first().click();
         const dialog = page.getByRole('dialog');
+        const authorSelect = dialog.getByLabel(/^Creador/);
+        await authorSelect.waitFor();
+        for (const account of accounts) {
+          assert.equal(await authorSelect.locator(`option[value="${account.id}"]`).count(), studioRoles.includes(account.role) ? 1 : 0, account.role);
+        }
         assert.equal(await dialog.getByLabel('Subtítulo', { exact: true }).getAttribute('maxlength'), '100');
         assert.equal(await dialog.getByLabel('Horas ahorradas · estimación', { exact: true }).getAttribute('max'), '2147483647');
         await dialog.getByLabel('Subtítulo', { exact: true }).fill('x'.repeat(100));

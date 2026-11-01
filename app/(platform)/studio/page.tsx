@@ -3,7 +3,8 @@ import { RouteGuard } from '@/components/auth/route-guard';
 import { StudioWorkspace } from '@/components/studio/studio-workspace';
 import '@/styles/studio-next.css';
 import { requireAccount } from '@/lib/server/auth';
+import { studioRoles } from '@/lib/auth/policy';
 export default async function StudioPage(){
-  await requireAccount(['developer'], '/studio');
-  return <RouteGuard roles={['developer']}><Suspense fallback={<p role="status">Cargando Studio…</p>}><StudioWorkspace/></Suspense></RouteGuard>;
+  await requireAccount(studioRoles, '/studio');
+  return <RouteGuard roles={studioRoles}><Suspense fallback={<p role="status">Cargando Studio…</p>}><StudioWorkspace/></Suspense></RouteGuard>;
 }

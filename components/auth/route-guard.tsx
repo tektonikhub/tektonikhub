@@ -6,7 +6,7 @@ import { ShieldAlert } from 'lucide-react';
 import { useBLK } from '@/hooks/use-blk';
 import type { Role } from '@/lib/domain/types';
 
-export function RouteGuard({ roles, children }: { roles?: Role[]; children: ReactNode }) {
+export function RouteGuard({ roles, children }: { roles?: readonly Role[]; children: ReactNode }) {
   const { user, org } = useBLK();
   const path = usePathname();
   useEffect(() => { if (!user) window.location.replace(`/login?next=${encodeURIComponent(path)}`); }, [user, path]);
