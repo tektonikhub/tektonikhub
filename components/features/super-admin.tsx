@@ -8,7 +8,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { PageHeading } from '@/components/ui/page-heading';
 import type { Organization, OrganizationStatus, Plan } from '@/lib/domain/types';
-import { ConfirmDelete, DemoNotice, Empty, Field, MutationDialog, PoliciesManager, SelectField, Tabs, UsersManager } from './shared';
+import { ConfirmDelete, Empty, Field, MutationDialog, PoliciesManager, SelectField, Tabs, UsersManager } from './shared';
 
 const statusLabels: Record<OrganizationStatus, string> = { active: 'Activa', 'active-amber': 'Activa con aviso', suspended: 'Suspendida', pending: 'Pendiente' };
 function OrganizationEditor({ org, onClose }: { org: Organization | null; onClose: () => void }) {
@@ -31,14 +31,14 @@ function OrganizationEditor({ org, onClose }: { org: Organization | null; onClos
         <SelectField label="Estado" name="status" value={org.status}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectField>
       </>}
     </div>
-    <p>{org ? 'Los miembros se calculan a partir de las cuentas registradas. El correo de acceso del administrador no se cambia desde la organización.' : 'Se guardarán la organización y su administrador en InsForge y se solicitará el correo de activación. Si el envío falla, la cuenta permanece guardada y puede reintentarse desde Usuarios.'}</p>
+    <p>{org ? 'Los miembros se calculan a partir de las cuentas registradas. El correo de acceso del administrador no se cambia desde la organización.' : 'Se guardarán la organización y su administrador, y se solicitará el correo de activación. Si el envío falla, la cuenta permanece guardada y puede reintentarse desde Usuarios.'}</p>
   </MutationDialog>;
 }
 function PlansManager() {
   const { data, repository } = useBLK();
   const [query, setQuery] = useState(''), [editor, setEditor] = useState<{ plan: Plan | null } | null>(null), [deleting, setDeleting] = useState<Plan | null>(null);
   const plans = data.plans.filter(plan => plan.name.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es')));
-  return <section className="stack"><div className="toolbar"><Field label="Buscar planes" type="search" value={query} onChange={event => setQuery(event.target.value)} /><Button onClick={() => setEditor({ plan: null })}>Crear plan</Button></div><p>Precios informativos guardados en InsForge: no existe cobro, checkout ni facturación.</p><div className="business-table-wrap"><table className="data-table"><thead><tr><th>Plan</th><th>Precio mensual informativo</th><th>Organizaciones</th><th>Acciones</th></tr></thead><tbody>{plans.map(plan => <tr key={plan.id}><td>{plan.name}</td><td>{plan.price === null ? 'Consultar' : `${plan.price.toLocaleString('es-ES')} €/mes`}</td><td>{data.organizations.filter(org => org.plan === plan.id).length}</td><td><div className="business-actions"><Button variant="secondary" onClick={() => setEditor({ plan })}>Editar</Button><Button variant="danger" onClick={() => setDeleting(plan)}>Eliminar</Button></div></td></tr>)}</tbody></table></div>{!plans.length && <Empty />}{editor && <MutationDialog title={editor.plan ? 'Editar plan' : 'Crear plan'} onClose={() => setEditor(null)} onSubmit={fields => repository.savePlan(editor.plan?.id || null, { name: String(fields.get('name')), price: fields.get('price') === '' ? null : Number(fields.get('price')) })}><Field label="Nombre" name="name" required maxLength={100} defaultValue={editor.plan?.name} /><Field label="Precio mensual (€); vacío = consultar" name="price" type="number" min={0} max={9999999999.99} step="0.01" defaultValue={editor.plan?.price ?? ''} /></MutationDialog>}{deleting && <ConfirmDelete title={`Eliminar plan · ${deleting.name}`} onClose={() => setDeleting(null)} operation={() => repository.deletePlan(deleting.id)} description="El plan no podrá eliminarse mientras esté asignado a una organización. Esta acción no se puede deshacer." />}</section>;
+  return <section className="stack"><div className="toolbar"><Field label="Buscar planes" type="search" value={query} onChange={event => setQuery(event.target.value)} /><Button onClick={() => setEditor({ plan: null })}>Crear plan</Button></div><p>Precios informativos; no existe cobro, checkout ni facturación.</p><div className="business-table-wrap"><table className="data-table"><thead><tr><th>Plan</th><th>Precio mensual informativo</th><th>Organizaciones</th><th>Acciones</th></tr></thead><tbody>{plans.map(plan => <tr key={plan.id}><td>{plan.name}</td><td>{plan.price === null ? 'Consultar' : `${plan.price.toLocaleString('es-ES')} €/mes`}</td><td>{data.organizations.filter(org => org.plan === plan.id).length}</td><td><div className="business-actions"><Button variant="secondary" onClick={() => setEditor({ plan })}>Editar</Button><Button variant="danger" onClick={() => setDeleting(plan)}>Eliminar</Button></div></td></tr>)}</tbody></table></div>{!plans.length && <Empty />}{editor && <MutationDialog title={editor.plan ? 'Editar plan' : 'Crear plan'} onClose={() => setEditor(null)} onSubmit={fields => repository.savePlan(editor.plan?.id || null, { name: String(fields.get('name')), price: fields.get('price') === '' ? null : Number(fields.get('price')) })}><Field label="Nombre" name="name" required maxLength={100} defaultValue={editor.plan?.name} /><Field label="Precio mensual (€); vacío = consultar" name="price" type="number" min={0} max={9999999999.99} step="0.01" defaultValue={editor.plan?.price ?? ''} /></MutationDialog>}{deleting && <ConfirmDelete title={`Eliminar plan · ${deleting.name}`} onClose={() => setDeleting(null)} operation={() => repository.deletePlan(deleting.id)} description="El plan no podrá eliminarse mientras esté asignado a una organización. Esta acción no se puede deshacer." />}</section>;
 }
 export function SuperAdminScreen() {
   const { data, repository, org: currentOrg, notify } = useBLK();
@@ -53,8 +53,8 @@ export function SuperAdminScreen() {
   function exportJson() { try { const url = URL.createObjectURL(new Blob([JSON.stringify(repository.exportData(), null, 2)], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = 'tektonik-hub-data.json'; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); notify('JSON exportado con los datos autorizados del espacio.'); } catch { notify('No se pudo exportar el JSON.', 'error'); } }
   function access(org: Organization) { if (accessing) return; setAccessing(true); router.push(`/company?org=${encodeURIComponent(org.id)}`); }
   return <div className="stack">
-    <PageHeading title="Super Admin" eyebrow="Tektonik hub · PLATFORM ADMIN" description="Administración global de organizaciones, identidades y configuración en InsForge." actions={<Button variant="secondary" onClick={exportJson}>Exportar JSON</Button>} />
-    <DemoNotice />
+    <PageHeading title="Super Admin" eyebrow="Tektonik hub · PLATFORM ADMIN" description="Administración global de organizaciones, identidades y configuración." actions={<Button variant="secondary" onClick={exportJson}>Exportar JSON</Button>} />
+
     <div className="business-stats">
       <div className="business-stat"><strong>{data.organizations.filter(org => ['active', 'active-amber'].includes(org.status)).length}</strong><span>Organizaciones activas</span></div>
       <div className="business-stat"><strong>{data.users.filter(user => !user.deletedAt).length}</strong><span>Usuarios registrados</span></div>
@@ -80,7 +80,7 @@ export function SuperAdminScreen() {
     {editor && <OrganizationEditor org={editor.org} onClose={() => setEditor(null)} />}
     {deleting && <ConfirmDelete title={`Archivar organización · ${deleting.name}`} actionLabel="Archivar" description="Se archivará la organización y se desactivará el acceso de sus cuentas. Las aplicaciones, revisiones, políticas y eventos se conservan en la base de datos. La organización de plataforma y tu propia empresa no pueden archivarse." onClose={() => setDeleting(null)} operation={() => repository.deleteOrganization(deleting.id)} />}
     {transition && <MutationDialog title={`${transition.status === 'suspended' ? 'Suspender' : 'Activar'} organización · ${transition.org.name}`} saveLabel={transition.status === 'suspended' ? 'Suspender' : 'Activar'} danger={transition.status === 'suspended'} onClose={() => setTransition(null)} onSubmit={() => repository.setOrganizationStatus(transition.org.id, transition.status)}>
-      <p>{transition.status === 'suspended' ? 'Las cuentas de esta empresa perderán acceso al negocio mientras permanezca suspendida. Sus datos e historial se conservan; los tokens ya emitidos no se revocan, pero cada operación comprueba el estado en InsForge.' : 'Las cuentas autorizadas y habilitadas de esta empresa podrán volver a acceder. No se crea infraestructura ni se emite certificación.'}</p>
+      <p>{transition.status === 'suspended' ? 'Las cuentas de esta empresa perderán acceso al negocio mientras permanezca suspendida. Sus datos e historial se conservan; los tokens ya emitidos no se revocan, pero el acceso se comprueba en cada operación.' : 'Las cuentas autorizadas y habilitadas de esta empresa podrán volver a acceder. No se crea infraestructura ni se emite certificación.'}</p>
     </MutationDialog>}
     {detail && <Dialog open title={detail.name} onClose={() => setDetailId(null)}><div className="stack">
       <Badge status={detail.status}>{statusLabels[detail.status]}</Badge>
@@ -94,7 +94,7 @@ export function SuperAdminScreen() {
         <div><dt>Fecha de alta</dt><dd>{detail.date || detail.createdAt}</dd></div>
         <div><dt>Último acceso registrado</dt><dd>{detail.lastAccess || 'No disponible'}</dd></div>
       </dl>
-      <DemoNotice />
+
       <div className="business-actions"><Button variant="secondary" onClick={() => { setDetailId(null); setEditor({ org: detail }); }}>Editar</Button><Button disabled={accessing || ['suspended', 'pending'].includes(detail.status)} onClick={() => access(detail)}>{accessing ? 'Abriendo…' : 'Abrir empresa'}</Button><Button variant="secondary" onClick={() => setDetailId(null)}>Cerrar</Button></div>
     </div></Dialog>}
   </div>;

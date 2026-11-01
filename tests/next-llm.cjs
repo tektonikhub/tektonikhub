@@ -253,14 +253,14 @@ async function main() {
       await page.getByLabel('Modelo desplegado (deployment)').fill(fields.deployment);
       await page.getByLabel('API key', { exact: true }).fill(fakeKey);
       await page.getByRole('button', { name: 'Guardar configuración', exact: true }).click();
-      await page.getByText(/Configuración guardada en InsForge para los usuarios/).waitFor();
+      await page.getByText(/Configuración guardada para los usuarios/).waitFor();
       assert.equal(await page.getByLabel('API key', { exact: true }).inputValue(), '');
       assert.ok(!JSON.stringify(settings.get(orgId)).includes(fakeKey));
       assert.equal(azureCalls, 0, 'Saving must not consume Azure quota');
       assert.equal(await page.evaluate(key => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }).includes(key), fakeKey), false);
       await page.reload();
       await page.getByRole('button', { name: 'Configuración org · LLM Settings', exact: true }).click();
-      await page.getByText(/Azure configurado para esta organización en InsForge/).waitFor();
+      await page.getByText(/Azure configurado para esta organización\./).waitFor();
       assert.equal(await page.getByLabel('Endpoint HTTPS').inputValue(), endpoint);
       assert.equal(await page.getByLabel('API key', { exact: true }).inputValue(), '');
       await page.getByRole('button', { name: 'Probar conexión (consume cuota)', exact: true }).click();

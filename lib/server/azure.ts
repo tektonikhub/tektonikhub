@@ -79,7 +79,7 @@ async function credentials(context: Context, orgId: string): Promise<Credentials
   const { data, error } = await context.client.database.from('organization_azure')
     .select(`${metadataColumns},encrypted_key`).eq('org_id', orgId).limit(1);
   if (error) databaseError(error);
-  if (!Array.isArray(data)) throw new HttpError(503, 'InsForge no devolvió la configuración Azure válida.');
+  if (!Array.isArray(data)) throw new HttpError(503, 'No se pudo leer la configuración Azure.');
   if (!data.length) return null;
   const parsed = credentialsSchema.safeParse(data[0]);
   if (!parsed.success) throw new HttpError(503, 'La configuración Azure guardada no es válida. Administración debe volver a guardarla.');
@@ -90,7 +90,7 @@ async function status(context: Context, orgId: string): Promise<LLMStatus> {
   const { data, error } = await context.client.database.from('organization_azure')
     .select(metadataColumns).eq('org_id', orgId).limit(1);
   if (error) databaseError(error);
-  if (!Array.isArray(data)) throw new HttpError(503, 'InsForge no devolvió la configuración Azure válida.');
+  if (!Array.isArray(data)) throw new HttpError(503, 'No se pudo leer la configuración Azure.');
   const parsed = credentialsSchema.omit({ encrypted_key: true }).nullable().safeParse(data[0] ?? null);
   if (!parsed.success) throw new HttpError(503, 'La configuración Azure guardada no es válida.');
   const settings = parsed.data;
