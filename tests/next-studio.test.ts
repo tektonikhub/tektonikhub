@@ -7,6 +7,7 @@ import { addVersion, blankDraft, branchVersion, bytes, draftKey, localPersistenc
 import { checkAbort, OFFLINE_CSP, parseDashboardJSON, specForKind, waitForGeneration, withDashboard } from '../lib/studio/engines';
 import { databaseSnapshot } from '../lib/studio/persistence-map';
 import { abortableResponse, llm, validateDashboardIteration } from '../lib/studio/llm';
+import { loadSubmissionSource } from '../lib/studio/source';
 import type { DashboardKit, StudioDraft, StudioEngine, StudioVersion } from '../lib/studio/types';
 const require=createRequire(import.meta.url);
 const kit:DashboardKit=require(resolve('lib','studio','runtime','dashboard-kit.js'));
@@ -33,4 +34,27 @@ class MemoryStorage implements Storage { private data=new Map<string,string>();l
 test('persistence propagates corruption/quota/removal failures and does not silently reset',async()=>{const prior=Object.getOwnPropertyDescriptor(globalThis,'localStorage'),storage=new MemoryStorage();Object.defineProperty(globalThis,'localStorage',{configurable:true,value:storage});try{const scope={orgId:'org',userId:'user'},adapter=localPersistence(kit);assert.equal(await adapter.load(scope),null);await adapter.save(scope,complete());assert.equal((await adapter.load(scope))?.selectedId,1);storage.setItem(draftKey(scope),'{broken');await assert.rejects(adapter.load(scope));assert.equal(storage.getItem(draftKey(scope)),'{broken');storage.fail=true;await assert.rejects(adapter.save(scope,blankDraft()));await assert.rejects(adapter.remove(scope));storage.fail=false;assert.equal(storage.getItem(draftKey(scope)),'{broken');await adapter.remove(scope);assert.equal(await adapter.load(scope),null);}finally{if(prior)Object.defineProperty(globalThis,'localStorage',prior);else Reflect.deleteProperty(globalThis,'localStorage');}});
 test('database map uses exact PostgreSQL columns and distinguishes ticket version from Studio version',()=>{const draft=complete();draft.submission={id:'legacy-app',ticket:'APP-1',versionId:1};const snapshot=databaseSnapshot({orgId:'legacy-org',userId:'legacy-user'},draft,{projectId:'uuid-project',orgId:'uuid-org',ownerId:'uuid-user',revision:2,createdAt:'2026-10-25T09:00:00Z',submittedAppId:'uuid-app',submittedAppVersion:4});assert.equal(snapshot.project.submitted_version,4);assert.equal(snapshot.project.current_version,1);assert.equal(snapshot.versions[0].version,1);assert.equal(snapshot.versions[0].engine,'demo');assert.equal(snapshot.messages[0].body,'Primera versión sintética.');assert.throws(()=>databaseSnapshot({orgId:'o',userId:'u'},draft,{projectId:'p',orgId:'o',ownerId:'u',revision:1,createdAt:'date',submittedAppId:'app'}));});
 test('workspace is native React; only isolated generated preview uses iframe',()=>{const source=readFileSync(resolve('components','studio','studio-workspace.tsx'),'utf8');assert.match(source,/sandbox="allow-scripts"/);assert.match(source,/srcDoc=\{source\}/);assert.ok(!source.includes('allow-same-origin'));assert.ok(!source.includes('dangerouslySetInnerHTML'));assert.ok(!source.includes('create-app.html'));});
+test('submission source is a bounded no-store read tied to the exact ticket version',async()=>{
+  const app={id:'00000000-0000-4000-8000-000000000300',version:3};
+  const fetcher:typeof fetch=async(input,options)=>{
+    const url=new URL(String(input),'http://127.0.0.1');
+    assert.equal(url.pathname,'/api/studio/source');
+    assert.equal(url.searchParams.get('appId'),app.id);
+    assert.equal(url.searchParams.get('version'),'3');
+    assert.equal(options?.cache,'no-store');
+    assert.equal(options?.credentials,'same-origin');
+    return Response.json({appId:app.id,version:3,generatedHtml:'<html>Saved source</html>'});
+  };
+  assert.equal(await loadSubmissionSource(app,fetcher),'<html>Saved source</html>');
+  assert.equal(await loadSubmissionSource(app,async()=>Response.json({appId:app.id,version:3,generatedHtml:null})),null);
+  for(const response of [
+    {appId:app.id,version:4,generatedHtml:'stale'},
+    {appId:'00000000-0000-4000-8000-000000000301',version:3,generatedHtml:'wrong ticket'},
+    {appId:app.id,version:3,generatedHtml:42},
+    {appId:app.id,version:3,generatedHtml:'x'.repeat(300001)},
+    {appId:app.id,version:3},
+  ])await assert.rejects(loadSubmissionSource(app,async()=>Response.json(response)));
+  await assert.rejects(loadSubmissionSource(app,async()=>Response.json({error:'Version conflict'},{status:409})),/Version conflict/);
+  await assert.rejects(loadSubmissionSource(app,async()=>{throw new Error('Offline');}),/No se confirmó/);
+});
 test('Azure client uses CSRF protocol, validates JSON and never silently falls back',async()=>{const original=globalThis.fetch;const calls:{url:string;options?:RequestInit}[]=[];globalThis.fetch=async(input:RequestInfo|URL,options?:RequestInit)=>{const url=String(input);calls.push({url,options});if(url==='/api/session')return Response.json({csrf:'a'.repeat(64),localOnly:true});if(url==='/api/studio/generate')return Response.json({config:kit.createConfig('ventas'),provider:'azure-openai',model:'demo-deployment'});return Response.json({error:'disabled'},{status:503});};try{const generated=await llm.generate('org','ventas',null,kit,new AbortController().signal);assert.equal(generated.model,'demo-deployment');const call=calls.find(c=>c.url==='/api/studio/generate');assert.equal(new Headers(call?.options?.headers).get('X-BLK-CSRF'),'a'.repeat(64));assert.deepEqual(JSON.parse(String(call?.options?.body)),{prompt:'ventas',previous:null,orgId:'org'});assert.equal(call?.options?.credentials,'same-origin');await assert.rejects(llm.status('org'),/BLK_ENABLE_LOCAL_LLM=true/);const abort=new AbortController();abort.abort();await assert.rejects(llm.generate('org','ventas',null,kit,abort.signal),{name:'AbortError'});}finally{globalThis.fetch=original;}});

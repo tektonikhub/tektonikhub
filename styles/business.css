@@ -61,6 +61,31 @@
 .business-login-story > p { color: var(--fg-soft); max-width: 460px; }
 .business-login-panel { padding: clamp(20px, 4vw, 40px); }
 .business-login-panel h2 { font-family: var(--display-font); font-size: 2rem; margin: 0; }
+.login-page { min-height: 100dvh; padding: 24px 20px 40px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.login-header { width: 100%; max-width: 1080px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.login-brand { display: flex; align-items: center; gap: 10px; font-family: var(--display-font); font-size: 18px; font-weight: 800; }
+.login-languages { display: flex; gap: 4px; }
+.login-languages .btn { min-height: 44px; min-width: 44px; padding: 8px; }
+.login-languages [aria-pressed=true] { background: var(--fg); color: var(--card); }
+.login-card { width: 100%; max-width: 440px; padding: 32px; gap: 24px; margin-top: auto; box-shadow: var(--shadow); }
+.login-intro { gap: 10px; }
+.login-intro h1 { font-size: 32px; }
+.login-intro p, .login-help { color: var(--fg-soft); }
+.login-form { gap: 16px; }
+.login-form .input { min-height: 48px; font-size: 16px; }
+.login-password-field { gap: 6px; }
+.login-password { position: relative; }
+.login-password .input { padding-right: 92px; }
+.login-password-toggle { position: absolute; right: 4px; top: 2px; bottom: 2px; min-width: 78px; padding: 8px; }
+.login-caps-lock { color: var(--amber); font-size: 12px; }
+.login-link { text-decoration: underline; text-underline-offset: 3px; }
+.login-link:hover { color: var(--blue); }
+.login-recovery { align-self: flex-end; font-size: 13px; padding: 4px 0; }
+.login-submit { min-height: 48px; width: 100%; font-size: 16px; }
+.login-help { border-top: 1px solid var(--line); padding-top: 20px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.login-help p:last-child { font-size: 12px; }
+.login-back { margin-bottom: auto; color: var(--fg-soft); font-size: 13px; }
+@media (max-width: 480px) { .login-page { padding: 16px; gap: 20px; } .login-card { padding: 24px 20px; } .login-brand { font-size: 16px; } }
 .business-role-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .business-role-button { display: flex; flex-direction: column; align-items: start; padding: 16px; text-align: left; white-space: normal; min-height: 118px; }
 .business-role-button strong { font-family: var(--display-font); font-size: 1.06rem; }

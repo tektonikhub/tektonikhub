@@ -21,6 +21,20 @@ const state = { empty: false, throttleDenied: false, authStatus: 200, refreshSta
 const counts = { login: 0, refresh: 0, bootstrap: 0, signup: 0, verify: 0 };
 const accessTokens = new Map(), refreshTokens = new Map();
 const signingKey = randomBytes(32);
+const kit = require(path.join(root, 'lib', 'studio', 'runtime', 'dashboard-kit.js'));
+const sourceConfig = kit.createConfig('Dashboard de operaciones con filtros y tabla');
+const sourceHtml = kit.renderHTML(sourceConfig).replace('</head>', '<meta name="blk-generator" content="azure-openai"><meta name="blk-model" content="synthetic-model"></head>');
+const sourceId = index => `00000000-0000-4000-8000-${String(300 + index).padStart(12, '0')}`;
+const sourceRows = Array.from({ length: 11 }, (_, index) => ({
+  id: sourceId(index), org_id: index === 3 ? '00000000-0000-4000-8000-000000000099' : orgId,
+  author_id: index === 2 ? accounts[2].id : accounts[0].id,
+  deleted_at: index === 4 ? '2026-01-01T00:00:00Z' : null,
+  version: index === 10 ? 4 : 3, review_status: index === 5 ? 'approved' : 'changes_requested',
+  generated_html: index === 6 ? null : index === 9 ? 42 : index === 1 ? sourceHtml.replace('synthetic-model', 'second-model') : sourceHtml,
+}));
+const referenceFile = { name: 'reference.csv', type: 'text/csv', size: 42 };
+let sourceVersion = 3, sourceReadFailure = false;
+const sourceReads = [], commands = [];
 let base, environment, next, browser, logs = '';
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -46,7 +60,16 @@ function workspace(account) {
       adminId: accounts[2].id, createdAt: '2026-01-01T00:00:00.000Z', date: '2026-01-01', domain: '', lastAccess: '', system: true }],
     users: accounts.map(value => ({ id: value.id, orgId, role: value.role, name: `Synthetic ${value.role}`, initials: 'ST', dept: 'Testing',
       email: value.email, username: value.username, enabled: value.enabled, accountStatus: 'active', deletedAt: null })),
-    plans: [{ id: planId, name: 'Initial', price: 0 }], apps: [], reviews: [], events: [], policies: [],
+    plans: [{ id: planId, name: 'Initial', price: 0 }],
+    apps: [sourceRows[0], sourceRows[1], sourceRows[6]].map(row => ({
+      id: row.id, orgId, authorId: row.author_id, title: 'Synthetic dashboard', area: 'operations',
+      desc: 'Synthetic submission description with enough characters.', tagline: 'Synthetic summary', impact: 'Synthetic impact',
+      dataNote: 'Original data note', repoUrl: '', tech: ['Studio'], tags: [], security: [],
+      attachments: [{ name: 'index.html', type: 'text/html', size: Buffer.byteLength(sourceHtml) }, referenceFile],
+      metrics: { hours: 0, users: 0, rating: '-' }, reviewStatus: 'changes_requested', maturity: 'new', version: 3,
+      ticket: `APP-${row.id.slice(-4)}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', environment: '',
+    })),
+    reviews: [], events: [], policies: [],
   };
 }
 function send(response, status, value) {
@@ -85,6 +108,53 @@ const backend = http.createServer(async (request, response) => {
     if (url.pathname === '/api/database/rpc/tk_workspace') {
       if (!account?.enabled || !account.verified) return fail(response, 401);
       return send(response, 200, workspace(account));
+    }
+    if (['/api/database/records/apps', '/api/database/records/app_versions'].includes(url.pathname)) {
+      assert.ok(account?.enabled && account.verified, 'Source must use the authenticated user token');
+      assert.equal(account.role, 'developer');
+      assert.equal(url.searchParams.get('org_id'), `eq.${orgId}`);
+      assert.equal(url.searchParams.get('author_id'), `eq.${account.id}`);
+      const versions = url.pathname.endsWith('/app_versions');
+      const id = url.searchParams.get(versions ? 'app_id' : 'id')?.replace(/^eq\./, '');
+      const row = sourceRows.find(row => row.id === id && row.org_id === orgId && row.author_id === account.id && !row.deleted_at);
+      sourceReads.push({ versions, id });
+      if (sourceReadFailure || id === sourceId(8)) return send(response, 500, { code: 'XX000', message: 'Synthetic source unavailable' });
+      if (!row) return send(response, 200, []);
+      if (!versions) {
+        assert.equal(url.searchParams.get('select'), 'version,review_status');
+        assert.equal(url.searchParams.get('deleted_at'), 'is.null');
+        return send(response, 200, [{ version: id === sourceId(0) ? sourceVersion : row.version, review_status: row.review_status }]);
+      }
+      assert.equal(url.searchParams.get('select'), 'generated_html');
+      assert.equal(url.searchParams.get('version'), 'eq.3');
+      return send(response, 200, id === sourceId(7) ? [] : [{ generated_html: row.generated_html }]);
+    }
+    if (url.pathname === '/api/database/rpc/tk_command') {
+      assert.ok(account?.enabled && account.verified);
+      commands.push({ ...body, role: account.role });
+      if (body.p_action === 'updateOrganization') {
+        assert.equal(account.role, 'superadmin');
+        assert.equal(Object.hasOwn(body.p_fields, 'members'), false);
+        return send(response, 200, { id: orgId });
+      }
+      if (body.p_action === 'saveManagedApp') {
+        assert.equal(account.role, 'admin');
+        return send(response, 200, { id: body.p_id || sourceId(0) });
+      }
+      if (body.p_action === 'savePlan') {
+        assert.equal(account.role, 'superadmin');
+        return send(response, 200, { id: planId });
+      }
+      if (body.p_action === 'updateSubmission') {
+        assert.equal(account.role, 'developer');
+        assert.equal(body.p_id, sourceId(0));
+        if (body.p_version !== sourceVersion) return send(response, 409, { code: '40001', message: 'Synthetic concurrent version change' });
+        assert.equal(body.p_fields.generatedHtml, sourceHtml);
+        assert.deepEqual(body.p_fields.attachments.filter(file => file.name !== 'index.html'), [referenceFile]);
+        assert.equal(body.p_fields.dataNote, 'Original data note');
+        return send(response, 200, { id: body.p_id });
+      }
+      throw new Error(`Unexpected command ${body.p_action}`);
     }
     if (url.pathname === '/api/auth/sessions') {
       counts.login += 1;
@@ -248,6 +318,71 @@ async function main() {
     }
     assert.ok(ready, `Next not ready: ${logs}`);
     browser = await chromium.launch({ headless: true });
+    await run('Simple login supports mobile, password visibility, keyboard errors and both languages', async () => {
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage();
+        await page.setViewportSize({ width: 375, height: 812 });
+        await page.goto(base + '/login');
+        await page.getByRole('heading', { name: 'Inicia sesión', exact: true }).waitFor();
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        const identifier = page.getByLabel('Usuario o correo electrónico');
+        const secret = page.getByLabel('Contraseña', { exact: true });
+        await identifier.fill('developer');
+        await secret.fill('incorrect');
+        assert.equal(await secret.getAttribute('type'), 'password');
+        await page.getByRole('button', { name: 'Mostrar contraseña', exact: true }).click();
+        assert.equal(await secret.getAttribute('type'), 'text');
+        assert.equal(await secret.inputValue(), 'incorrect');
+        await page.getByRole('button', { name: 'Ocultar contraseña', exact: true }).click();
+        assert.equal(await secret.getAttribute('type'), 'password');
+        await secret.focus();
+        await secret.dispatchEvent('keyup', { key: 'A', modifierCapsLock: true });
+        await page.getByText('Bloq Mayús está activado.', { exact: true }).waitFor();
+        await secret.dispatchEvent('keyup', { key: 'a', modifierCapsLock: false });
+        assert.equal(await page.locator('#login-caps-lock').count(), 0);
+        await secret.press('Enter');
+        const error = page.locator('.business-error[role="alert"]');
+        await error.waitFor();
+        assert.match(await error.innerText(), /Credenciales incorrectas/);
+        assert.equal(await error.evaluate(element => element === document.activeElement), true);
+        assert.equal(await identifier.inputValue(), 'developer');
+        assert.equal(await secret.inputValue(), 'incorrect');
+        assert.equal(await page.getByRole('button', { name: 'Entrar', exact: true }).isEnabled(), true);
+        assert.equal(await page.getByRole('link', { name: '¿Has olvidado tu contraseña?', exact: true }).getAttribute('href'), '/reset-password');
+        assert.equal(await page.getByRole('link', { name: 'Activar cuenta', exact: true }).getAttribute('href'), '/reset-password?activate=1');
+        await page.getByRole('button', { name: 'English', exact: true }).click();
+        await page.getByRole('heading', { name: 'Sign in', exact: true }).waitFor();
+        assert.equal(await page.locator('main').getAttribute('lang'), 'en');
+        await page.reload();
+        await page.getByRole('heading', { name: 'Sign in', exact: true }).waitFor();
+        await page.getByRole('button', { name: 'Español', exact: true }).click();
+        await page.getByRole('heading', { name: 'Inicia sesión', exact: true }).waitFor();
+      } finally { await ctx.close(); }
+    });
+    await run('Email sign-in submits once, shows progress and follows the authorized destination', async () => {
+      const ctx = await context();
+      let release;
+      try {
+        const page = await ctx.newPage();
+        await page.goto(base + '/login?next=%2Fcompany');
+        await page.getByLabel('Usuario o correo electrónico').fill(accounts[0].email);
+        await page.getByLabel('Contraseña', { exact: true }).fill(password);
+        const readyToRelease = new Promise(resolve => { release = resolve; });
+        await page.route('**/api/auth/login', async route => { await readyToRelease; await route.continue(); });
+        const before = counts.login;
+        await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+        const pending = page.getByRole('button', { name: 'Accediendo…', exact: true });
+        await pending.waitFor();
+        assert.equal(await pending.isDisabled(), true);
+        assert.equal(await page.getByLabel('Usuario o correo electrónico').isDisabled(), true);
+        assert.equal(await page.getByLabel('Contraseña', { exact: true }).isDisabled(), true);
+        release();
+        await page.waitForURL(base + '/company');
+        assert.equal(counts.login, before + 1);
+        assert.equal((await session(page)).body.role, 'developer');
+      } finally { release?.(); await ctx.close(); }
+    });
     await run('Empty backend explains initial setup instead of pretending credentials can work', async () => {
       state.empty = true;
       const ctx = await context();
@@ -291,6 +426,206 @@ async function main() {
           if (role === 'catalog' || role === 'developer') { await page.goto(base + '/admin'); await page.waitForURL(base + destinations[role]); }
         } finally { await ctx.close(); }
       }
+    });
+    await run('Studio source API enforces identity, author, tenant, status and immutable version with explicit failures', async () => {
+      const guest = await fetch(`${base}/api/studio/source?appId=${sourceId(0)}&version=3`);
+      assert.equal(guest.status, 401);
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'developer');
+        const getSource = (query) => page.evaluate(async query => {
+          const response = await fetch('/api/studio/source?' + query);
+          return { status: response.status, cache: response.headers.get('cache-control'), body: await response.json() };
+        }, query);
+        const source = await getSource(`appId=${sourceId(0)}&version=3`);
+        assert.equal(source.status, 200, JSON.stringify(source.body));
+        assert.equal(source.cache, 'private, no-store');
+        assert.deepEqual(source.body, { appId: sourceId(0), version: 3, generatedHtml: sourceHtml });
+        for (const query of ['appId=invalid&version=3', `appId=${sourceId(0)}&version=0`, `appId=${sourceId(0)}&version=1.2`,
+          `appId=${sourceId(0)}&version=2147483648`, `appId=${sourceId(0)}&version=3&extra=1`]) {
+          assert.equal((await getSource(query)).status, 400);
+        }
+        for (const index of [2, 3, 4]) assert.equal((await getSource(`appId=${sourceId(index)}&version=3`)).status, 404);
+        for (const index of [5, 7, 10]) assert.equal((await getSource(`appId=${sourceId(index)}&version=3`)).status, 409);
+        const absent = await getSource(`appId=${sourceId(6)}&version=3`);
+        assert.equal(absent.status, 200); assert.equal(absent.body.generatedHtml, null);
+        for (const index of [8, 9]) assert.equal((await getSource(`appId=${sourceId(index)}&version=3`)).status, 503);
+      } finally { await ctx.close(); }
+      for (const role of ['catalog', 'admin', 'superadmin']) {
+        const other = await context();
+        try {
+          const page = await other.newPage(); await login(page, role);
+          const before = sourceReads.length;
+          const response = await page.evaluate(async id => (await fetch(`/api/studio/source?appId=${id}&version=3`)).status, sourceId(0));
+          assert.equal(response, 403); assert.equal(sourceReads.length, before);
+        } finally { await other.close(); }
+      }
+    });
+    await run('Fresh-browser Studio restores stored HTML, data, provenance and attachments before submitting the original ticket', async () => {
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'developer');
+        await page.goto(`${base}/studio?edit=${sourceId(0)}`);
+        await page.getByRole('button', { name: 'Crear rama', exact: true }).waitFor();
+        await page.waitForFunction(() => !document.querySelector('#versionSelect')?.disabled);
+        await page.getByRole('tab', { name: 'Código HTML', exact: true }).click();
+        assert.equal(await page.locator('#codePanel code').textContent(), sourceHtml);
+        assert.match(await page.getByText(/reference.csv ·/).innerText(), /text\/csv/);
+        const sandbox = page.locator('#previewFrame');
+        assert.equal(await sandbox.getAttribute('sandbox'), 'allow-scripts');
+        assert.match(await sandbox.getAttribute('srcdoc'), /connect-src 'none'/);
+        await page.getByRole('button', { name: 'Crear rama', exact: true }).click();
+        const key = `blkunit:studio:v1:${orgId}:${accounts[0].id}:${sourceId(0)}`;
+        await page.waitForFunction(key => JSON.parse(localStorage.getItem(key) || '{}').selectedId === 2, key);
+        const draft = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key);
+        assert.equal(draft.editing.expectedVersion, 3);
+        assert.equal(draft.versions[0].provider, 'azure-openai');
+        assert.equal(draft.versions[0].model, 'synthetic-model');
+        assert.deepEqual(draft.versions[0].spec.dashboard.data, sourceConfig.data);
+        assert.deepEqual(draft.files, [referenceFile]);
+        const before = sourceReads.length;
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector('#versionSelect')?.value === '2');
+        assert.equal(sourceReads.length, before, 'A valid local edit must not be replaced with server HTML');
+        await page.getByRole('button', { name: 'Enviar a IT', exact: true }).click();
+        const dialog = page.getByRole('dialog');
+        await dialog.waitFor();
+        assert.equal(await dialog.getByLabel(/^Descripción/).getAttribute('minlength'), '30');
+        assert.equal(await dialog.getByLabel('Resumen', { exact: true }).getAttribute('maxlength'), '100');
+        assert.equal(await dialog.getByLabel(/^Datos utilizados/).inputValue(), 'Original data note');
+        const prior = commands.length;
+        await dialog.getByRole('button', { name: 'Enviar cambios a IT', exact: true }).click();
+        await dialog.getByText(/El envío se guardó/).waitFor();
+        assert.equal(commands.length, prior + 1);
+        assert.equal(commands.at(-1).p_action, 'updateSubmission');
+        assert.equal(commands.at(-1).p_version, 3);
+      } finally { await ctx.close(); }
+    });
+    await run('Studio refuses stale correction submission without losing the draft and exposes source retry/null states', async () => {
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'developer');
+        sourceReadFailure = true;
+        await page.goto(`${base}/studio?edit=${sourceId(0)}`);
+        await page.getByRole('button', { name: 'Reintentar apertura', exact: true }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Generar herramienta', exact: true }).isDisabled(), true);
+        sourceReadFailure = false;
+        await page.getByRole('button', { name: 'Reintentar apertura', exact: true }).click();
+        await page.waitForFunction(() => !document.querySelector('#versionSelect')?.disabled);
+        sourceVersion = 4;
+        await page.getByRole('button', { name: 'Enviar a IT', exact: true }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Enviar cambios a IT', exact: true }).click();
+        await page.getByRole('dialog').getByRole('alert').waitFor();
+        assert.match(await page.getByRole('dialog').getByRole('alert').innerText(), /falló/);
+        assert.equal(await page.getByRole('dialog').getByText(/El envío se guardó/).count(), 0);
+        await page.getByRole('dialog').getByRole('button', { name: 'Cancelar', exact: true }).click();
+        await page.getByRole('tab', { name: 'Código HTML', exact: true }).click();
+        assert.equal(await page.locator('#codePanel code').textContent(), sourceHtml);
+        sourceVersion = 3;
+        await page.goto(`${base}/studio?edit=${sourceId(6)}`);
+        await page.getByText(/Este envío no contiene HTML generado/).waitFor();
+        assert.equal(await page.getByLabel(/^Tipo de herramienta/).isEnabled(), true);
+      } finally { sourceReadFailure = false; sourceVersion = 3; await ctx.close(); }
+    });
+    await run('Corrupt local edit stays protected and a delayed source cannot overwrite a different ticket', async () => {
+      const ctx = await context();
+      let release;
+      try {
+        const page = await ctx.newPage(); await login(page, 'developer');
+        const key = `blkunit:studio:v1:${orgId}:${accounts[0].id}:${sourceId(0)}`;
+        await page.evaluate(key => localStorage.setItem(key, '{corrupt'), key);
+        const before = sourceReads.length;
+        await page.goto(`${base}/studio?edit=${sourceId(0)}`);
+        await page.getByText(/El original NO se sobrescribirá/).waitFor();
+        assert.equal(sourceReads.length, before);
+        assert.equal(await page.evaluate(key => localStorage.getItem(key), key), '{corrupt');
+        await page.evaluate(key => localStorage.removeItem(key), key);
+        let pending, completed;
+        const held = new Promise(resolve => { pending = resolve; });
+        const finished = new Promise(resolve => { completed = resolve; });
+        const gate = new Promise(resolve => { release = resolve; });
+        await page.route('**/api/studio/source?**', async route => {
+          if (new URL(route.request().url()).searchParams.get('appId') !== sourceId(0)) return route.continue();
+          pending();
+          await gate;
+          await route.fulfill({ response: await route.fetch() });
+          completed();
+        });
+        await page.reload(); await held;
+        await page.evaluate(id => history.pushState(null, '', `/studio?edit=${id}`), sourceId(1));
+        await page.waitForFunction(() => !document.querySelector('#versionSelect')?.disabled);
+        await page.getByRole('tab', { name: 'Código HTML', exact: true }).click();
+        const secondHtml = sourceRows[1].generated_html;
+        assert.equal(await page.locator('#codePanel code').textContent(), secondHtml);
+        release(); await finished;
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await page.locator('#codePanel code').textContent(), secondHtml);
+        assert.match(await page.locator('.studio-top-status').innerText(), /APP-0301/);
+      } finally { release?.(); await ctx.close(); }
+    });
+    await run('Organization member count is derived and edits never send or accept a fabricated members value', async () => {
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'superadmin');
+        await page.getByRole('button', { name: 'Editar', exact: true }).click();
+        const dialog = page.getByRole('dialog');
+        const members = dialog.getByLabel('Miembros registrados · calculado automáticamente', { exact: true });
+        assert.equal(await members.getAttribute('readonly'), '');
+        assert.equal(await members.getAttribute('name'), null);
+        assert.equal(await members.inputValue(), '4');
+        const prior = commands.length;
+        await dialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+        await dialog.waitFor({ state: 'hidden' });
+        assert.equal(commands.length, prior + 1);
+        assert.equal(commands.at(-1).p_action, 'updateOrganization');
+        assert.equal(Object.hasOwn(commands.at(-1).p_fields, 'members'), false);
+        const invalid = await post(page, '/api/workspace', {
+          action: 'updateOrganization', id: orgId,
+          fields: { name: 'Synthetic organization', domain: '', email: accounts[2].email, plan: planId, adminId: accounts[2].id, status: 'active', members: 999 },
+        });
+        assert.equal(invalid.status, 400); assert.equal(commands.length, prior + 1);
+        accounts[2].enabled = false;
+        await page.reload();
+        await page.getByRole('button', { name: 'Editar', exact: true }).click();
+        const adminSelect = page.getByRole('dialog').getByLabel(/^Administrador/);
+        assert.equal(await adminSelect.locator(`option[value="${accounts[2].id}"]`).count(), 0);
+        assert.equal(await adminSelect.getAttribute('required'), '');
+        assert.equal(await adminSelect.evaluate(select => select.checkValidity()), false);
+        await adminSelect.selectOption(accounts[3].id);
+        assert.equal(await adminSelect.evaluate(select => select.checkValidity()), true);
+      } finally { accounts[2].enabled = true; await ctx.close(); }
+    });
+    await run('Managed app and plan UI/API limits match PostgreSQL without accepting overlong summaries or overflowing numbers', async () => {
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'admin');
+        await page.getByRole('button', { name: 'Editar', exact: true }).first().click();
+        const dialog = page.getByRole('dialog');
+        assert.equal(await dialog.getByLabel('Subtítulo', { exact: true }).getAttribute('maxlength'), '100');
+        assert.equal(await dialog.getByLabel('Horas ahorradas · estimación', { exact: true }).getAttribute('max'), '2147483647');
+        await dialog.getByLabel('Subtítulo', { exact: true }).fill('x'.repeat(100));
+        await dialog.getByRole('button', { name: 'Guardar', exact: true }).click();
+        await dialog.waitFor({ state: 'hidden' });
+        const fields = commands.at(-1).p_fields, before = commands.length;
+        assert.equal(fields.tagline.length, 100);
+        assert.equal((await post(page, '/api/workspace', { action: 'saveManagedApp', id: sourceId(0), fields: { ...fields, hours: 2147483647, users: 2147483647 }, version: 3 })).status, 200);
+        for (const changed of [{ ...fields, tagline: 'x'.repeat(101) }, { ...fields, hours: 2147483648 }, { ...fields, users: 2147483648 }]) {
+          const result = await post(page, '/api/workspace', { action: 'saveManagedApp', id: sourceId(0), fields: changed, version: 3 });
+          assert.equal(result.status, 400);
+        }
+        assert.equal(commands.length, before + 1);
+      } finally { await ctx.close(); }
+      const admin = await context();
+      try {
+        const page = await admin.newPage(); await login(page, 'superadmin');
+        await page.getByRole('button', { name: 'Planes', exact: true }).click();
+        await page.getByRole('button', { name: 'Editar', exact: true }).click();
+        const dialog = page.getByRole('dialog');
+        assert.equal(await dialog.getByLabel('Precio mensual (€); vacío = consultar', { exact: true }).getAttribute('max'), '9999999999.99');
+        await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+        assert.equal((await post(page, '/api/workspace', { action: 'savePlan', id: planId, fields: { name: 'Synthetic', price: 9999999999.99 } })).status, 200);
+        assert.equal((await post(page, '/api/workspace', { action: 'savePlan', id: planId, fields: { name: 'Synthetic', price: 10000000000 } })).status, 400);
+      } finally { await admin.close(); }
     });
     await run('Proxy forwards freshly refreshed cookies and the explicit refresh route rotates only once', async () => {
       const ctx = await context();

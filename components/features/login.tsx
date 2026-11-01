@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { z } from 'zod';
@@ -13,7 +13,10 @@ export function LoginScreen({ setupRequired = false, initialError = '' }: { setu
   const params = useSearchParams();
   const [language, setLanguageValue] = useState<'es' | 'en'>('es');
   const [busy, setBusy] = useState(false), [error, setError] = useState(initialError);
+  const [showPassword, setShowPassword] = useState(false), [capsLock, setCapsLock] = useState(false);
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const en = language === 'en';
+  useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
   useEffect(() => {
     void Promise.resolve().then(() => {
       try { if (localStorage.getItem('blkunit:lang') === 'en') setLanguageValue('en'); }
@@ -44,23 +47,45 @@ export function LoginScreen({ setupRequired = false, initialError = '' }: { setu
       setBusy(false);
     }
   }
-  return <main className="business-login">
-    <section className="business-login-story"><Link href="/" className="business-login-logo">Tektonik<span>hub</span></Link><span className="business-label">THE AI-NATIVE WORKFORCE</span><h1>Tu talento.<br />Tu IA.<br />Tu impacto.</h1><p>Un espacio para crear, revisar y compartir las herramientas que tu equipo necesita.</p></section>
-    <section className="panel stack business-login-panel">
-      <div className="business-actions"><Button variant={en ? 'ghost' : 'primary'} onClick={() => setLanguage('es')}>ES</Button><Button variant={en ? 'primary' : 'ghost'} onClick={() => setLanguage('en')}>EN</Button></div>
-      <h2>{en ? 'Sign in' : 'Acceso al portal'}</h2>
-      <p>{en ? 'Sign in with your account. Your organization and permissions are assigned automatically.' : 'Entra con tu cuenta. Tu organización y tus permisos se asignan automáticamente.'}</p>
-      {setupRequired && <p role="status" className="business-notice">{en ? 'The portal has no authorized accounts yet. The platform administrator must create the first account and send its activation email before anyone can sign in.' : 'El portal todavía no tiene cuentas autorizadas. El responsable de la plataforma debe crear la primera cuenta y enviar su correo de activación antes de poder acceder.'}</p>}
-      <form className="stack" onSubmit={login} aria-busy={busy}>
-        <Field label={en ? 'Username or email' : 'Usuario o correo electrónico'} name="identifier" autoComplete="username" autoCapitalize="none" spellCheck={false} minLength={3} maxLength={254} required disabled={busy || setupRequired} />
-        <Field label={en ? 'Password' : 'Contraseña'} name="password" type="password" autoComplete="current-password" maxLength={128} required disabled={busy || setupRequired} />
-        {error && <p role="alert" className="business-error">{error}</p>}
+  return <main className="login-page" lang={language}>
+    <header className="login-header">
+      <Link href="/" className="login-brand" aria-label="Tektonik hub"><span className="brand-logo" aria-hidden="true">TH</span><span>Tektonik hub</span></Link>
+      <nav className="login-languages" aria-label={en ? 'Language' : 'Idioma'}>
+        <Button variant="ghost" aria-label="Español" aria-pressed={!en} onClick={() => setLanguage('es')}>ES</Button>
+        <Button variant="ghost" aria-label="English" aria-pressed={en} onClick={() => setLanguage('en')}>EN</Button>
+      </nav>
+    </header>
+    <section className="panel stack login-card" aria-labelledby="login-title">
+      <div className="stack login-intro">
+        <h1 id="login-title">{en ? 'Sign in' : 'Inicia sesión'}</h1>
+        <p>{en ? 'Use your username or work email.' : 'Usa tu usuario o correo de trabajo.'}</p>
+      </div>
+      {setupRequired && <div role="status" className="business-notice"><strong>{en ? 'The portal is not ready yet' : 'El acceso aún no está preparado'}</strong><p>{en ? 'The portal has no authorized accounts yet. Ask the platform administrator to create the first account and send its activation email.' : 'El portal todavía no tiene cuentas autorizadas. Pide al responsable de la plataforma que cree la primera cuenta y envíe su correo de activación.'}</p></div>}
+      <form className="stack login-form" onSubmit={login} aria-busy={busy}>
+        <Field label={en ? 'Username or email' : 'Usuario o correo electrónico'} name="identifier" placeholder={en ? 'Your username or name@company.com' : 'Tu usuario o nombre@empresa.com'} autoComplete="username" autoCapitalize="none" spellCheck={false} minLength={3} maxLength={254} required disabled={busy || setupRequired} />
+        <div className="stack login-password-field">
+          <label className="field" htmlFor="login-password">{en ? 'Password' : 'Contraseña'}</label>
+          <div className="login-password">
+            <input id="login-password" className="input" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" maxLength={128} required disabled={busy || setupRequired}
+              aria-describedby={capsLock ? 'login-caps-lock' : undefined}
+              onKeyDown={event => setCapsLock(event.getModifierState('CapsLock'))}
+              onKeyUp={event => setCapsLock(event.getModifierState('CapsLock'))}
+              onBlur={() => setCapsLock(false)} />
+            <Button variant="ghost" className="login-password-toggle" aria-controls="login-password" aria-pressed={showPassword}
+              aria-label={en ? (showPassword ? 'Hide password' : 'Show password') : (showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña')}
+              disabled={busy || setupRequired} onClick={() => setShowPassword(value => !value)}>
+              {en ? (showPassword ? 'Hide' : 'Show') : (showPassword ? 'Ocultar' : 'Mostrar')}
+            </Button>
+          </div>
+          {capsLock && <p id="login-caps-lock" role="status" className="login-caps-lock">{en ? 'Caps Lock is on.' : 'Bloq Mayús está activado.'}</p>}
+        </div>
+        <Link href="/reset-password" className="login-link login-recovery">{en ? 'Forgot your password?' : '¿Has olvidado tu contraseña?'}</Link>
+        {error && <p ref={errorRef} tabIndex={-1} role="alert" className="business-error">{error}</p>}
         {params.get('password') === 'updated' && <p className="business-notice" role="status">{en ? 'Password saved. Sign in with your new password.' : 'Contraseña guardada. Accede con tu nueva contraseña.'}</p>}
-        <Button type="submit" disabled={busy || setupRequired}>{busy ? (en ? 'Signing in…' : 'Accediendo…') : (en ? 'Sign in' : 'Entrar')}</Button>
+        <Button type="submit" variant="primary" className="login-submit" disabled={busy || setupRequired}>{busy ? (en ? 'Signing in…' : 'Accediendo…') : (en ? 'Sign in' : 'Entrar')}</Button>
       </form>
-      <Link href="/reset-password">{en ? 'Forgot your password?' : '¿Has olvidado tu contraseña?'}</Link>
-      <p className="business-meta">{en ? 'Accounts are created by an administrator. If you were invited, verify your email and set your password.' : 'Las cuentas las crea un administrador. Si has recibido una invitación, verifica tu correo y establece tu contraseña.'} <Link href="/reset-password?activate=1">{en ? 'Activate account' : 'Activar cuenta'}</Link></p>
-      <Link href="/">{en ? 'Back to Tektonik hub' : 'Volver a Tektonik hub'}</Link>
+      <div className="login-help"><p>{en ? 'First time here?' : '¿Es tu primer acceso?'} <Link href="/reset-password?activate=1" className="login-link">{en ? 'Activate account' : 'Activar cuenta'}</Link></p><p>{en ? 'If you have not received an invitation, contact your administrator.' : 'Si no has recibido una invitación, contacta con tu administrador.'}</p></div>
     </section>
+    <Link href="/" className="login-back login-link">{en ? 'Back to Tektonik hub' : 'Volver a Tektonik hub'}</Link>
   </main>;
 }

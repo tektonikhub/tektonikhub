@@ -4,7 +4,7 @@ Plataforma propuesta para registrar, revisar y distribuir micro-aplicaciones cre
 
 **Estado actual:** aplicación React nativa con **Next.js App Router, TypeScript estricto y Tailwind CSS 4**, componentes reutilizables, Studio y repositorio de datos intercambiable. El código actual conecta el acceso y el negocio con InsForge: `/login` valida usuario/correo y contraseña, la sesión se conserva mediante cookies SSR y PostgreSQL asigna empresa y rol. `data.json` y el adaptador local quedan como fixtures de demostración/pruebas; no conceden acceso al portal. Los borradores Studio siguen en el navegador. El almacenamiento de binarios y el sandbox de ejecución de servidor siguen pendientes.
 
-> Los nombres, métricas, tickets y sellos de seguridad son datos de demostración. Los textos sobre SOC 2, DLP, GDPR, Zero-Retention, AWS, SAP u Okta no acreditan certificaciones ni integraciones implementadas. No introducir documentación corporativa ni credenciales en las peticiones. La única excepción es la API key de Azure en el formulario LLM Settings, usando el servidor Node local de confianza.
+> El fixture y los ejemplos Studio son sintéticos; las cuentas y registros creados en el portal se guardan en InsForge. Las métricas son estimaciones, y las revisiones manuales no acreditan SOC 2, DLP, GDPR ni integraciones AWS, SAP u Okta. No introducir documentación corporativa ni credenciales en las peticiones. La única excepción es la API key de Azure en LLM Settings, usando el servidor Node local de confianza.
 
 ## Inicio rápido: aplicación Next.js
 
@@ -36,6 +36,8 @@ Mantener esta terminal abierta. Next prepara los recursos automáticamente y rec
 - **Entrada:** [http://127.0.0.1:3000/login](http://127.0.0.1:3000/login)
 
 Entrar con una cuenta autorizada y activada de InsForge. No se elige empresa ni rol en el formulario. El servidor necesita la configuración de `.env.example` en `.env.local`; las claves administrativas se mantienen exclusivamente en el servidor. Azure no es necesario para iniciar sesión.
+
+`/login` muestra un formulario centrado con usuario/correo, contraseña y el botón **Entrar**. Permite mostrar u ocultar la contraseña, avisa si Bloq Mayús está activado y ofrece recuperación y activación de cuenta. Los errores se anuncian y reciben el foco sin borrar los campos; el idioma ES/EN se conserva en el navegador.
 
 ### Primera cuenta y activación
 
@@ -104,9 +106,13 @@ React / hooks → BLKProvider → RemoteBLKRepository → API Next.js
                                          PostgreSQL / InsForge
 ```
 
-La estructura `app`, `components`, `hooks`, `lib`, `public`, `styles`, `scripts` y `tests`, las fronteras de Studio, el mapa de rutas y el plan de integración están documentados en [docs/NEXT_ARCHITECTURE.md](docs/NEXT_ARCHITECTURE.md). La implementación usa componentes React y un repositorio TypeScript independiente para el negocio. El único iframe es la preview aislada del documento generado por Studio.
+La estructura `app`, `components`, `hooks`, `lib`, `public`, `styles`, `scripts` y `tests`, las fronteras de Studio, el mapa de rutas y la integración actual están documentados en [docs/NEXT_ARCHITECTURE.md](docs/NEXT_ARCHITECTURE.md). La implementación usa componentes React y un repositorio TypeScript independiente para el negocio. El único iframe es la preview aislada del documento generado por Studio.
 
 La UI conserva creación → revisión → cambios → reenvío → aprobación → catálogo, con versiones y confirmaciones manuales. Incluye CRUD empresarial, organizaciones, usuarios, planes, políticas y marca. Las rutas protegidas comprueban la identidad y el rol en el servidor; las operaciones de negocio también pasan por las políticas de PostgreSQL. Idiomas operativos parciales; no hay certificaciones, telemetría ni cobros reales.
+
+Los miembros de una organización se calculan a partir de sus cuentas no archivadas y no se editan manualmente. Resúmenes de aplicaciones admiten hasta 100 caracteres y descripciones de 30 a 800; los contadores y precios informativos respetan los límites SQL. Archivar conserva historial en vez de borrar físicamente revisiones y eventos.
+
+Al corregir un envío desde `/studio?edit=ID` en un navegador nuevo, Studio recupera solo su HTML y versión de `app_versions` mediante `/api/studio/source`, con identidad, autor, empresa, RLS y estado comprobados. Conserva configuración de dashboard, procedencia y adjuntos de referencia. Un borrador local válido tiene prioridad; uno corrupto no se sobrescribe. Las correcciones concurrentes fallan explícitamente sin marcarse como enviadas. Los borradores todavía son locales: esto no implementa sincronización cloud de la conversación ni cargas de binarios.
 
 Tras iniciar sesión se vuelve a la ruta solicitada solo si ese rol tiene acceso; en caso contrario se usa su destino autorizado. `/login` redirige las sesiones existentes. La renovación actualiza las cookies del navegador y de la misma petición SSR; un fallo temporal del backend no borra el refresh token. Cerrar sesión elimina las cookies compartidas y avisa a las otras pestañas. No implica revocar todos los tokens ya emitidos por InsForge.
 
@@ -126,6 +132,8 @@ npx -y @insforge/cli@latest db query "SELECT 1 AS ok" --json
 Los comandos usan `@latest` porque la invocación sin versión en este entorno resolvía una CLI antigua que no incluía los comandos de memoria ni feedback documentados.
 
 El SDK y la migración de identidad/negocio están presentes. El backend no importa automáticamente `data.json` ni `localStorage`: necesita cuentas reales autorizadas y los datos que sus administradores creen. El alta inicial se describe arriba.
+
+La fuente del esquema vigente es `migrations\20261101075915_identity-workspace.sql`, con 15 tablas de negocio, RPC autorizados y RLS. El esquema de 25 tablas y su validador en `database` corresponden a un diseño histórico/propuesto; no deben aplicarse encima de esta migración. No se requiere otra migración para recuperar el HTML de las versiones ni calcular miembros.
 
 ### Aplicación desplegada en InsForge
 
@@ -161,7 +169,7 @@ $env:BLK_LOCAL_LLM_PORT = "8027"
 npm run dev
 ```
 
-Admin → `/admin` → configuración → LLM Settings. Después cambiar a developer y abrir `/studio`. Las claves permanecen en memoria del servidor Node; el puente Next valida host/origen/CSRF y límites, y está desactivado por defecto y en producción. No publicar ni tunelizar estos puertos. Consulta [la guía completa](docs/NEXT_ARCHITECTURE.md#azure-opcional-conservar-el-mvp-local).
+Entrar con una cuenta Admin autorizada → `/admin` → configuración → LLM Settings. Después cerrar sesión, entrar con una cuenta developer autorizada y abrir `/studio`. Las claves permanecen en memoria del servidor Node; el puente Next valida host/origen/CSRF y límites, y está desactivado por defecto y en producción. No publicar ni tunelizar estos puertos. Consulta [la guía completa](docs/NEXT_ARCHITECTURE.md#azure-opcional-conservar-el-mvp-local).
 
 ### Validación Next y regresión
 
@@ -176,7 +184,7 @@ npm run build
 npm run test:next:browser
 ```
 
-`npm test` valida los motores actuales, su sandbox y la API LLM local; `test:next` valida el repositorio TypeScript, Studio, las reglas de autenticación y la frontera de plataforma. `test:next:auth` prueba la UI y las APIs Next con un backend sintético de loopback: credenciales, los cuatro roles, rutas protegidas, cookies, recarga, renovación, cierre entre pestañas, contraseña y reintento del alta inicial. No crea cuentas ni envía correos en el proyecto cloud. `test:next:llm` verifica el puente Azure simulado. El runner histórico `test:next:browser` conserva escenarios del selector demo y no representa el acceso real; para `/login`, usar `test:next:auth`. Instalar Chromium con `npx playwright install chromium` solo si no hay un navegador disponible.
+`npm test` valida los motores actuales, su sandbox y la API LLM local; `test:next` valida el repositorio TypeScript, Studio, las reglas de autenticación y la frontera de plataforma. `test:next:auth` prueba UI y APIs Next con un backend sintético de loopback: login, cuatro roles, cookies, renovación, cierre, contraseña, alta inicial, restauración de HTML, permisos, versiones concurrentes, borradores y límites de formularios. No crea cuentas ni envía correos en el proyecto cloud. `test:next:llm` verifica el puente Azure simulado. El runner histórico `test:next:browser` conserva escenarios del selector demo y no representa el acceso real; para `/login`, usar `test:next:auth`. Instalar Chromium con `npx playwright install chromium` solo si no hay un navegador disponible.
 
 ## Marca
 

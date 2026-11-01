@@ -6,7 +6,7 @@ import { databaseError, errorResponse, jsonResponse, readJson, sameOrigin } from
 import { brandSchema } from '@/lib/data/validation';
 
 const uuid = z.uuid();
-const natural = z.number().int().nonnegative().safe();
+const natural = z.number().int().nonnegative().max(2147483647);
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 const submission = z.object({
   title: z.string().trim().min(1).max(60), desc: z.string().trim().min(30).max(800), area: z.string().max(64),
@@ -26,7 +26,7 @@ const validators = {
     environment: z.string().trim().max(200), checks: z.object({ security: z.boolean(), data: z.boolean() }).strict().optional() }).strict(),
   deleteManagedApp: z.object({}).strict(),
   createOrganization: organization.strict(),
-  updateOrganization: organization.extend({ adminId: uuid, members: natural, status: z.enum(['active', 'active-amber', 'pending', 'suspended']) }).strict(),
+  updateOrganization: organization.extend({ adminId: uuid, status: z.enum(['active', 'active-amber', 'pending', 'suspended']) }).strict(),
   deleteOrganization: z.object({}).strict(),
   setOrganizationStatus: z.object({ status: z.enum(['active', 'suspended']) }).strict(),
   saveUser: z.object({ orgId: uuid, role: z.enum(['developer', 'catalog', 'admin', 'superadmin']), name: z.string().trim().min(1).max(120),
@@ -37,14 +37,14 @@ const validators = {
   saveCompanyProfile: company.extend({ bio: optionalText(2000), bannerTitle: optionalText(160), bannerDesc: optionalText(2000) }).strict(),
   deleteCompanyProfile: z.object({}).strict(),
   saveBrand: brandSchema,
-  savePlan: z.object({ name: z.string().trim().min(1).max(100), price: z.number().finite().nonnegative().nullable() }).strict(),
+  savePlan: z.object({ name: z.string().trim().min(1).max(100), price: z.number().finite().nonnegative().max(9999999999.99).nullable() }).strict(),
   deletePlan: z.object({}).strict(),
   savePolicy: policy, deletePolicy: z.object({}).strict(),
   saveGovernancePolicy: policy, deleteGovernancePolicy: z.object({}).strict(),
 };
 const commandSchema = z.object({
   action: z.enum(Object.keys(validators)), id: uuid.nullable(), fields: z.unknown(),
-  version: z.number().int().positive().optional(),
+  version: z.number().int().positive().max(2147483647).optional(),
 }).strict();
 export async function GET() {
   try { return jsonResponse(await workspaceForUser()); }

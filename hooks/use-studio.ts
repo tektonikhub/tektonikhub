@@ -5,6 +5,7 @@ import { useBLK } from '@/hooks/use-blk';
 import { addVersion, branchVersion, blankDraft, bytes, draftKey, localPersistence, MAX_MESSAGES, restoreVersion, validateFiles } from '@/lib/studio/draft';
 import { checkAbort, dashboardFromHTML, generatedDocument, provenanceFromHTML, isolatedHTML, loadEngines, specForKind, waitForGeneration, withDashboard } from '@/lib/studio/engines';
 import { llm } from '@/lib/studio/llm';
+import { loadSubmissionSource } from '@/lib/studio/source';
 import type { App, SubmissionFields } from '@/lib/domain/types';
 import type { DashboardKit, Provider, StudioDraft, StudioEngine, StudioKind, StudioPersistence, StudioScope } from '@/lib/studio/types';
 export function downloadText(text:string,name:string,type='text/html;charset=utf-8'){
@@ -48,10 +49,16 @@ export function useStudio(){
         if(edit&&!blocked.current){
           if(next.editing&&(next.editing.id!==edit.id||next.editing.ticket!==edit.ticket))throw new Error('El borrador no corresponde a este ticket.');
           if(!next.editing)next.editing={id:edit.id,ticket:edit.ticket,expectedVersion:edit.version};
-          if(!next.versions.length&&edit.generatedHtml){
-            const config=dashboardFromHTML(edit.generatedHtml,engines.kit);
-            let spec={...engines.engine.createSpec(edit.desc),title:edit.title};if(config)spec=withDashboard(spec,config);
-            next={...next,versions:[{id:1,spec,html:edit.generatedHtml,...provenanceFromHTML(edit.generatedHtml),createdAt:edit.updatedAt}],selectedId:1,nextVersion:2,messages:[{role:'assistant' as const,text:`IT ha solicitado cambios en ${edit.title}. Conservamos el ticket ${edit.ticket}. Itera y vuelve a enviar.`}],files:edit.attachments.filter(file=>file.name!=='index.html')};
+          if(!next.versions.length){
+            const html=edit.generatedHtml??await loadSubmissionSource(edit);
+            if(revision!==sessionRevision.current)return;
+            if(html){
+              const config=dashboardFromHTML(html,engines.kit);
+              let spec={...engines.engine.createSpec(edit.desc),title:edit.title};if(config)spec=withDashboard(spec,config);
+              next={...next,versions:[{id:1,spec,html,...provenanceFromHTML(html),createdAt:edit.updatedAt}],selectedId:1,nextVersion:2,messages:[{role:'assistant' as const,text:`IT ha solicitado cambios en ${edit.title}. Conservamos el ticket ${edit.ticket}. Itera y vuelve a enviar.`}],files:edit.attachments.filter(file=>file.name!=='index.html')};
+            }else{
+              setError('Este envío no contiene HTML generado. Crea una versión en Studio para enviar la corrección.');
+            }
           }
         }
         update(next);setKind(next.versions.find(v=>v.id===next.selectedId)?.spec.kind||'dashboard');setReady(true);setSaveState(blocked.current?'Restauración fallida · original protegido':next.versions.length?'✓ Borrador restaurado':'Nuevo borrador · sin cambios');
