@@ -55,7 +55,12 @@ test('The homepage has no obsolete dataset dependency or fabricated business cou
   assert.doesNotMatch(page, /data\.json|counts|seed/);
   assert.doesNotMatch(landing, /counts\.|fixture|local demo|demo local|No connected backend|Sin backend conectado|role=superadmin/i);
   assert.match(landing, /href="\/login"/);
-  assert.match(landing, /InsForge/);
+  assert.doesNotMatch(landing, /InsForge/i);
+  const shell = readFileSync(join('components', 'layout', 'app-shell.tsx'), 'utf8');
+  assert.doesNotMatch(shell, /InsForge|Tu talento\. Un solo hub\.|Crear · revisar · compartir/i);
+  for (const file of ['app/layout.tsx', 'components/features/shared.tsx', 'components/features/super-admin.tsx', 'components/studio/llm-settings.tsx']) {
+    assert.doesNotMatch(readFileSync(file, 'utf8'), /InsForge/i);
+  }
 });
 test('Tektonik hub branding covers page metadata without changing persistence keys', () => {
   const layout = readFileSync(join('app', 'layout.tsx'), 'utf8');

@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     if (available.error) databaseError(available.error);
     if (typeof available.data !== 'boolean') {
       console.error('InsForge returned an invalid catalog availability result');
-      throw new HttpError(503, 'InsForge no confirmó la disponibilidad de la aplicación.');
+      throw new HttpError(503, 'No se confirmó la disponibilidad de la aplicación.');
     }
     if (!available.data) throw new HttpError(404, 'Esta aplicación ya no está disponible en el catálogo de tu organización.');
     const app = await client.database.from('apps').select('version,review_status')
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     const current = appSchema.safeParse(app.data);
     if (!current.success) {
       console.error('InsForge returned an invalid approved app record');
-      throw new HttpError(503, 'InsForge no devolvió una versión válida de la aplicación.');
+      throw new HttpError(503, 'No se pudo recuperar una versión válida de la aplicación.');
     }
     if (current.data.version !== version) throw new HttpError(409, 'La aplicación cambió de versión. Recarga para abrir la versión aprobada.');
     const source = await client.database.from('app_versions').select('generated_html')
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     const document = sourceSchema.safeParse(source.data);
     if (!document.success) {
       console.error('InsForge returned an invalid approved app source');
-      throw new HttpError(503, 'InsForge no devolvió un HTML válido de la aplicación.');
+      throw new HttpError(503, 'No se pudo recuperar un HTML válido de la aplicación.');
     }
     if (!document.data.generated_html?.trim()) throw new HttpError(409, 'Esta aplicación no tiene HTML guardado. Su creador debe enviar una versión desde Studio.');
     return jsonResponse({ appId, version, generatedHtml: document.data.generated_html });

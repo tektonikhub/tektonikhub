@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const currentResult = appSchema.safeParse(app.data);
     if (!currentResult.success) {
       console.error('InsForge returned an invalid Studio app record');
-      throw new HttpError(503, 'InsForge no devolvió una versión válida del envío.');
+      throw new HttpError(503, 'No se pudo leer una versión válida del envío.');
     }
     const current = currentResult.data;
     if (current.version !== version) throw new HttpError(409, 'El envío cambió de versión. Recarga Studio antes de corregirlo.');
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     const sourceResult = sourceSchema.safeParse(source.data);
     if (!sourceResult.success) {
       console.error('InsForge returned an invalid Studio source record');
-      throw new HttpError(503, 'InsForge no devolvió un HTML válido del envío.');
+      throw new HttpError(503, 'No se pudo leer el contenido válido del envío.');
     }
     return jsonResponse({ appId, version, generatedHtml: sourceResult.data.generated_html });
   } catch (error) { return errorResponse(error); }

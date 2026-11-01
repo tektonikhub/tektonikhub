@@ -104,6 +104,8 @@ test('Catalog and Mi Flow access share the Studio sandbox without the conversati
   assert.match(view, /sandbox="allow-scripts"/);
   assert.match(view, /referrerPolicy="no-referrer"/);
   assert.doesNotMatch(view, /allow-same-origin|dangerouslySetInnerHTML|localStorage|useStudio|StudioWorkspace|loadEngines/);
+  const route = readFileSync(resolve('app', 'api', 'apps', 'source', 'route.ts'), 'utf8');
+  assert.doesNotMatch(route, /throw new HttpError\([^\n]*InsForge/);
   const sql = readFileSync(resolve('migrations', '20261101194802_catalog-app-access.sql'), 'utf8');
   assert.match(sql, /CREATE POLICY catalog_versions_read ON public\.app_versions/);
   assert.match(sql, /FOR SELECT TO authenticated/);

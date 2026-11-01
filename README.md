@@ -94,6 +94,8 @@ npx -y @insforge/cli@latest deployments deploy . --json
 
 Se despliega el código fuente, no `.next`. Las exclusiones de `.vercelignore` mantienen fuera del despliegue credenciales, herramientas y archivos ajenos a la aplicación.
 
+La URL de producción es compartida: cada publicación sustituye a la anterior, aunque proceda de otro worktree. Antes de desplegar, integra las revisiones ya publicadas y coordina las publicaciones concurrentes. Tras publicar, comprueba el comportamiento en la URL pública con una sesión autorizada; el estado `READY` de una publicación anterior no garantiza que siga siendo la que atiende esa URL.
+
 El entorno de hosting requiere `NEXT_PUBLIC_INSFORGE_URL`, `NEXT_PUBLIC_INSFORGE_ANON_KEY`, `APP_URL`/`NEXT_PUBLIC_APP_URL` e `INSFORGE_API_KEY`. Solo la URL y la clave anónima del backend pueden exponerse mediante las variables públicas de InsForge; las credenciales privilegiadas deben permanecer exclusivamente en el servidor.
 
 Azure OpenAI se utiliza desde el servidor Next.js en desarrollo y producción, con configuración persistente por organización. El puente `npm run dev:llm` es una herramienta local independiente y permanece deshabilitado en los despliegues públicos; la aplicación ya no depende de él ni de `BLK_ENABLE_LOCAL_LLM`.
