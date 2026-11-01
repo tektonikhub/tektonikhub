@@ -7,6 +7,7 @@ import { parseWorkspace } from '../lib/data/workspace';
 import { RemoteBLKRepository } from '../lib/data/remote-repository';
 import { approvedCatalogApps, flowOrbitPage, searchFlowApps } from '../lib/data/mi-flow';
 import { loginDestination, rolesForPath } from '../lib/auth/policy';
+import { applicationHref, loadApplicationSource } from '../lib/data/app-access';
 
 function fixture() {
   const app = (id: string, orgId = 'org', reviewStatus: App['reviewStatus'] = 'approved'): App => ({
@@ -45,6 +46,71 @@ test('Mini apps use the same approved organization catalog and hide suspended or
   assert.deepEqual(approvedCatalogApps(data, { ...org, status: 'suspended' }), []);
   assert.deepEqual(approvedCatalogApps(data, { ...org, status: 'pending' }), []);
   assert.deepEqual(approvedCatalogApps(data, null), []);
+});
+test('Application access and return retain the catalog or Mi Flow URL without changing other filters', () => {
+  const params = new URLSearchParams({ q: 'ventas & CRM', area: 'ventas', view: 'cards' });
+  for (const pathname of ['/catalog', '/mi-flow']) {
+    const opened = applicationHref(pathname, params, 'app & 1');
+    const url = new URL(opened, 'http://127.0.0.1');
+    assert.equal(url.pathname, pathname);
+    assert.equal(url.searchParams.get('open'), 'app & 1');
+    assert.equal(url.searchParams.get('q'), 'ventas & CRM');
+    assert.equal(url.searchParams.get('area'), 'ventas');
+    assert.equal(url.searchParams.get('view'), 'cards');
+    assert.equal(applicationHref(pathname, url.searchParams), `${pathname}?${params}`);
+    assert.equal(applicationHref(pathname, new URLSearchParams({ open: 'app' })), pathname);
+  }
+  assert.equal(params.has('open'), false);
+  assert.equal(applicationHref('https://example.invalid', new URLSearchParams()), '/catalog');
+});
+test('Approved application HTML is loaded on demand with credentials, no cache and the exact version', async () => {
+  const app = { id: '00000000-0000-4000-8000-000000000300', version: 3 };
+  const html = '<!doctype html><html><body>Approved application</body></html>';
+  const fetcher: typeof fetch = async (input, options) => {
+    const url = new URL(String(input), 'http://127.0.0.1');
+    assert.equal(url.pathname, '/api/apps/source');
+    assert.deepEqual(Object.fromEntries(url.searchParams), { appId: app.id, version: '3' });
+    assert.equal(options?.cache, 'no-store');
+    assert.equal(options?.credentials, 'same-origin');
+    assert.equal(options?.method, undefined);
+    return Response.json({ appId: app.id, version: 3, generatedHtml: html });
+  };
+  assert.equal(await loadApplicationSource(app, fetcher), html);
+  for (const source of [
+    { appId: app.id, version: 4, generatedHtml: html },
+    { appId: '00000000-0000-4000-8000-000000000301', version: 3, generatedHtml: html },
+    { appId: app.id, version: 3, generatedHtml: null },
+    { appId: app.id, version: 3, generatedHtml: '' },
+    { appId: app.id, version: 3, generatedHtml: 42 },
+    { appId: app.id, version: 3, generatedHtml: 'x'.repeat(300001) },
+    { appId: app.id, version: 3 },
+  ]) await assert.rejects(loadApplicationSource(app, async () => Response.json(source)));
+  for (const status of [401, 403, 404, 409, 503]) {
+    await assert.rejects(loadApplicationSource(app, async () => Response.json({ error: 'Application unavailable' }, { status })), /Application unavailable/);
+  }
+  await assert.rejects(loadApplicationSource(app, async () => { throw new Error('Offline'); }), /No se confirmó/);
+});
+test('Catalog and Mi Flow access share the Studio sandbox without the conversation or demo fallback', () => {
+  for (const name of ['catalog', 'mi-flow']) {
+    assert.match(readFileSync(resolve('components', 'features', `${name}.tsx`), 'utf8'), /params\.has\('open'\).*ApplicationView/);
+  }
+  const shared = readFileSync(resolve('components', 'features', 'shared.tsx'), 'utf8');
+  assert.match(shared, /router\.push\(applicationHref/);
+  assert.match(shared, /catalog && <AppAccessButton app=\{app\}/);
+  assert.doesNotMatch(shared, /DEMO: no se ejecuta|Acceder · demo/);
+  const view = readFileSync(resolve('components', 'features', 'application-view.tsx'), 'utf8');
+  assert.match(view, /approvedCatalogApps\(data, org\)/);
+  assert.match(view, /isolatedHTML\(html\)/);
+  assert.match(view, /sandbox="allow-scripts"/);
+  assert.match(view, /referrerPolicy="no-referrer"/);
+  assert.doesNotMatch(view, /allow-same-origin|dangerouslySetInnerHTML|localStorage|useStudio|StudioWorkspace|loadEngines/);
+  const sql = readFileSync(resolve('migrations', '20261101194802_catalog-app-access.sql'), 'utf8');
+  assert.match(sql, /CREATE POLICY catalog_versions_read ON public\.app_versions/);
+  assert.match(sql, /FOR SELECT TO authenticated/);
+  assert.match(sql, /public\.tk_can_use_flow_app\(app_id\)/);
+  assert.match(sql, /version = \([\s\S]*SELECT a\.version/);
+  assert.match(sql, /a\.id = app_versions\.app_id AND a\.org_id = app_versions\.org_id/);
+  assert.doesNotMatch(sql, /DROP POLICY|TO anon|FOR ALL|INSERT INTO|GRANT (?:INSERT|UPDATE|DELETE)/);
 });
 test('Flow search combines accent-insensitive text, category, author and persisted favorites', () => {
   const { data } = fixture();

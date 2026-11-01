@@ -53,7 +53,9 @@ Los enlaces utilizan `APP_URL` o `NEXT_PUBLIC_APP_URL`, y sus destinos deben est
 
 **Mi Flow** reúne las mini apps que cada usuario añade desde el catálogo de su organización. En las fichas, «Añadir» aparece entre «Detalles» y «Acceder» y pasa a «Añadida» al guardar, sin duplicados. La selección y los favoritos se guardan en InsForge, no en el navegador, y son privados incluso frente a otros administradores.
 
-El Flowverse ofrece vistas órbita y tarjetas, navegación por flechas o arrastre, búsqueda y colecciones por área. Se pueden marcar favoritos, consultar detalles y retirar mini apps sin eliminar las aplicaciones del catálogo. Las órbitas muestran hasta ocho mini apps a la vez; las flechas recorren toda la selección. Solo aparecen apps aprobadas de la organización activa del usuario: si se archivan, vuelven a revisión o la organización deja de estar activa, dejan de mostrarse. No se incluyen agentes, creación de flows, workflows ni automatizaciones del prototipo. «Acceder» conserva el comportamiento actual del catálogo: no ejecuta ni despliega código.
+El Flowverse ofrece vistas órbita y tarjetas, navegación por flechas o arrastre, búsqueda y colecciones por área. Se pueden marcar favoritos, consultar detalles y retirar mini apps sin eliminar las aplicaciones del catálogo. Las órbitas muestran hasta ocho mini apps a la vez; las flechas recorren toda la selección. Solo aparecen apps aprobadas de la organización activa del usuario: si se archivan, vuelven a revisión o la organización deja de estar activa, dejan de mostrarse. No se incluyen agentes, creación de flows, workflows ni automatizaciones del prototipo.
+
+«Acceder», tanto en el catálogo como en Mi Flow y sus diálogos de detalles, abre el HTML guardado de la versión aprobada ocupando todo el espacio disponible bajo el header y junto al menú. No incluye el chatbot ni los controles de edición de Studio. «Volver» regresa a la pantalla de origen; la URL conserva los parámetros de búsqueda y permite recargar la aplicación. El HTML se recupera con la sesión verificada, sin descargar todas las fuentes en el catálogo ni leer borradores del navegador. Se utiliza el mismo iframe aislado de Studio: los scripts internos pueden funcionar, pero no tienen acceso a la sesión del hub ni a la red. No se despliega un servidor por aplicación. Si no hay HTML guardado o la app deja de estar autorizada, se muestra el error sin sustituirla por una demo.
 
 ```text
 React / hooks → BLKProvider → RemoteBLKRepository → API Next.js
@@ -76,6 +78,8 @@ El proyecto cloud **`tektonik-hub`** está en **EU Central (`eu-central`)**. Su 
 El esquema base es `migrations/20261101075915_identity-workspace.sql`, con 15 tablas de negocio, RPC autorizados y RLS. `migrations/20261101180821_studio-admin-access.sql` amplía los permisos de envío y corrección a los administradores sin modificar el resto de los controles del RPC. El diseño histórico de `database` no debe aplicarse sobre estas migraciones.
 
 `migrations/20261101182647_mi-flow.sql` añade `user_flow_apps`, lectura privada con RLS y RPC que obtienen la identidad del servidor y comprueban organización y aprobación. No cambia los datos de las tablas existentes ni importa apps del HTML de referencia.
+
+`migrations/20261101194802_catalog-app-access.sql` permite leer la versión actual de las apps aprobadas de la organización activa para «Acceder». Conserva los permisos de historial de creadores y administradores; no publica versiones anteriores ni concede escritura al catálogo.
 
 ## Despliegue
 

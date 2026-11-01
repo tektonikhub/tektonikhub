@@ -11,6 +11,7 @@ import type { App } from '@/lib/domain/types';
 import { Button } from '@/components/ui/button';
 import { AppAccessButton, AppDetails } from './shared';
 import { AddToFlowButton, FlowFavoriteButton } from './flow-actions';
+import { ApplicationView } from './application-view';
 
 const palettes = [
   { color: '#644581', tint: '#ece3f7' }, { color: '#436b93', tint: '#e0ebf8' },
@@ -31,6 +32,7 @@ const pad = (value: number) => String(value).padStart(2, '0');
 
 export function MiFlowScreen() {
   const params = useSearchParams();
+  if (params.has('open')) return <ApplicationView appId={params.get('open') || ''} />;
   return <MiFlowContent key={params.toString()} initialQuery={params.get('q') || ''}
     initialArea={params.get('area') || ''} initialView={params.get('view') === 'cards' ? 'cards' : 'orbit'} />;
 }

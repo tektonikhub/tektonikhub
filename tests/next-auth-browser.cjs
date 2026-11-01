@@ -38,6 +38,8 @@ let sourceVersion = 3, sourceReadFailure = false;
 const sourceReads = [], commands = [];
 const createdApps = [];
 const flowEntries = new Map();
+const applicationSources = new Map();
+let applicationOrganizationStatus = 'active';
 let base, environment, next, browser, logs = '';
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -59,7 +61,7 @@ function workspace(account) {
   return {
     session: identity(account), revision: 0,
     categories: [{ id: 'operations', label: 'Operations' }],
-    organizations: [{ id: orgId, name: 'Synthetic organization', initials: 'SO', plan: planId, members: 4, compliance: null, status: 'active',
+    organizations: [{ id: orgId, name: 'Synthetic organization', initials: 'SO', plan: planId, members: 4, compliance: null, status: applicationOrganizationStatus,
       adminId: accounts[2].id, createdAt: '2026-01-01T00:00:00.000Z', date: '2026-01-01', domain: '', lastAccess: '', system: true }],
     users: accounts.map(value => ({ id: value.id, orgId, role: value.role, name: `Synthetic ${value.role}`, initials: 'ST', dept: 'Testing',
       email: value.email, username: value.username, enabled: value.enabled, accountStatus: 'active', deletedAt: null })),
@@ -71,7 +73,7 @@ function workspace(account) {
       attachments: [{ name: 'index.html', type: 'text/html', size: Buffer.byteLength(sourceHtml) }, referenceFile],
       metrics: { hours: 0, users: 0, rating: '-' }, reviewStatus: 'changes_requested', maturity: 'new', version: 3,
       ticket: `APP-${row.id.slice(-4)}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', environment: '',
-    })), ...createdApps],
+    })), ...createdApps.filter(app => app.orgId === orgId && !app.deletedAt)],
     reviews: [], events: [], policies: [],
   };
 }
@@ -112,6 +114,12 @@ const backend = http.createServer(async (request, response) => {
       if (!account?.enabled || !account.verified) return fail(response, 401);
       return send(response, 200, workspace(account));
     }
+    if (url.pathname === '/api/database/rpc/tk_can_use_flow_app') {
+      assert.ok(account?.enabled && account.verified);
+      assert.deepEqual(Object.keys(body), ['p_id']);
+      return send(response, 200, ['active', 'active-amber'].includes(applicationOrganizationStatus)
+        && createdApps.some(app => app.id === body.p_id && app.orgId === orgId && app.reviewStatus === 'approved' && !app.deletedAt));
+    }
     if (url.pathname === '/api/database/rpc/tk_flow_entries') {
       if (!account?.enabled || !account.verified) return fail(response, 401);
       return send(response, 200, [...(flowEntries.get(account.id)?.values() || [])]
@@ -132,6 +140,24 @@ const backend = http.createServer(async (request, response) => {
     }
     if (['/api/database/records/apps', '/api/database/records/app_versions'].includes(url.pathname)) {
       assert.ok(account?.enabled && account.verified, 'Source must use the authenticated user token');
+      if (!url.searchParams.has('author_id')) {
+        const versions = url.pathname.endsWith('/app_versions');
+        const id = url.searchParams.get(versions ? 'app_id' : 'id')?.replace(/^eq\./, '');
+        sourceReads.push({ versions, id, catalog: true });
+        assert.equal(url.searchParams.get('org_id'), `eq.${orgId}`);
+        if (sourceReadFailure) return send(response, 500, { code: 'XX000', message: 'Synthetic source unavailable' });
+        const app = createdApps.find(app => app.id === id && app.orgId === orgId && app.reviewStatus === 'approved' && !app.deletedAt);
+        if (!app) return send(response, 200, []);
+        if (!versions) {
+          assert.equal(url.searchParams.get('select'), 'version,review_status');
+          assert.equal(url.searchParams.get('review_status'), 'eq.approved');
+          assert.equal(url.searchParams.get('deleted_at'), 'is.null');
+          return send(response, 200, [{ version: app.version, review_status: app.reviewStatus }]);
+        }
+        assert.equal(url.searchParams.get('select'), 'generated_html');
+        assert.equal(url.searchParams.get('version'), `eq.${app.version}`);
+        return send(response, 200, applicationSources.has(id) ? [{ generated_html: applicationSources.get(id) }] : []);
+      }
       assert.ok(studioRoles.includes(account.role));
       assert.equal(url.searchParams.get('org_id'), `eq.${orgId}`);
       assert.equal(url.searchParams.get('author_id'), `eq.${account.id}`);
@@ -427,6 +453,7 @@ async function main() {
         title: `Mini app ${String(index + 1).padStart(2, '0')}`, reviewStatus: 'approved', attachments: [], version: 1,
       }));
       createdApps.push(...miniApps);
+      for (const app of miniApps) applicationSources.set(app.id, sourceHtml);
       const ctx = await context();
       try {
         const page = await ctx.newPage();
@@ -500,6 +527,143 @@ async function main() {
         } finally { await other.close(); }
       } finally {
         await ctx.close(); flowEntries.clear(); createdApps.splice(0, miniApps.length);
+        for (const app of miniApps) applicationSources.delete(app.id);
+      }
+    });
+    await run('Approved app access is user-scoped, version-bound and explicit about missing HTML or unavailable apps', async () => {
+      const seed = workspace(accounts[0]).apps[0];
+      const apps = Array.from({ length: 9 }, (_, index) => ({
+        ...seed, id: sourceId(900 + index), title: `Approved application ${index}`, version: 3,
+        authorId: index === 1 ? accounts[2].id : accounts[0].id,
+        orgId: index === 3 ? sourceId(999) : orgId,
+        reviewStatus: index === 2 ? 'pending_review' : 'approved',
+        deletedAt: index === 4 ? '2026-11-01T12:00:00Z' : undefined,
+      }));
+      createdApps.push(...apps);
+      for (const app of apps) applicationSources.set(app.id, sourceHtml);
+      applicationSources.set(apps[5].id, null);
+      applicationSources.set(apps[6].id, 42);
+      applicationSources.delete(apps[7].id);
+      applicationSources.set(apps[8].id, '  ');
+      assert.equal((await fetch(`${base}/api/apps/source?appId=${apps[0].id}&version=3`)).status, 401);
+      try {
+        for (const role of roles) {
+          const ctx = await context();
+          try {
+            const page = await ctx.newPage(); await login(page, role, '/catalog');
+            const getSource = query => page.evaluate(async query => {
+              const response = await fetch('/api/apps/source?' + query);
+              return { status: response.status, cache: response.headers.get('cache-control'), body: await response.json() };
+            }, query);
+            for (const index of [0, 1]) {
+              const result = await getSource(`appId=${apps[index].id}&version=3`);
+              assert.equal(result.status, 200, JSON.stringify(result.body));
+              assert.equal(result.cache, 'private, no-store');
+              assert.deepEqual(result.body, { appId: apps[index].id, version: 3, generatedHtml: sourceHtml });
+            }
+            for (const index of [2, 3, 4]) assert.equal((await getSource(`appId=${apps[index].id}&version=3`)).status, 404);
+            for (const index of [5, 7, 8]) assert.equal((await getSource(`appId=${apps[index].id}&version=3`)).status, 409);
+            assert.equal((await getSource(`appId=${apps[6].id}&version=3`)).status, 503);
+            assert.equal((await getSource(`appId=${apps[0].id}&version=2`)).status, 409);
+            for (const query of ['appId=invalid&version=3', `appId=${apps[0].id}&version=0`,
+              `appId=${apps[0].id}&version=1.2`, `appId=${apps[0].id}&version=2147483648`,
+              `appId=${apps[0].id}&version=3&orgId=${orgId}`]) assert.equal((await getSource(query)).status, 400);
+            sourceReadFailure = true;
+            assert.equal((await getSource(`appId=${apps[0].id}&version=3`)).status, 503);
+            sourceReadFailure = false;
+            if (role === 'superadmin') {
+              applicationOrganizationStatus = 'suspended';
+              assert.equal((await getSource(`appId=${apps[0].id}&version=3`)).status, 404);
+              applicationOrganizationStatus = 'active';
+            }
+          } finally { sourceReadFailure = false; applicationOrganizationStatus = 'active'; await ctx.close(); }
+        }
+      } finally {
+        createdApps.splice(0, apps.length);
+        for (const app of apps) applicationSources.delete(app.id);
+      }
+    });
+    await run('Acceder opens the saved interactive HTML at full content size from catalog, details and Mi Flow without the Studio chatbot', async () => {
+      const app = { ...workspace(accounts[0]).apps[0], id: sourceId(920), title: 'Approved application', reviewStatus: 'approved' };
+      createdApps.push(app);
+      applicationSources.set(app.id, sourceHtml);
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'catalog', '/catalog');
+        const before = sourceReads.length;
+        await page.goto(base + '/catalog?q=Approved');
+        const card = page.locator('.business-app-card').filter({ has: page.getByRole('heading', { name: app.title, exact: true }) });
+        await card.waitFor();
+        assert.equal(sourceReads.length, before, 'Catalog must not eagerly download generated HTML');
+        await card.getByRole('button', { name: 'Acceder', exact: true }).click();
+        await page.waitForURL(`${base}/catalog?q=Approved&open=${app.id}`);
+        const frame = page.frameLocator('.application-frame');
+        await frame.locator('#dashboard-table tbody tr').first().waitFor();
+        assert.deepEqual(JSON.parse(await frame.locator('#blk-dashboard-config').textContent()), kit.validate(sourceConfig));
+        assert.equal(await page.locator('.application-frame').getAttribute('sandbox'), 'allow-scripts');
+        assert.equal(await page.locator('.application-frame').getAttribute('referrerpolicy'), 'no-referrer');
+        assert.equal(await page.locator('.studio-chat, #promptInput, .studio-preview-toolbar').count(), 0);
+        assert.equal(await page.locator('.top-bar').isVisible(), true);
+        assert.equal(await page.locator('.sidebar').isVisible(), true);
+        assert.equal(await page.getByRole('link', { name: 'Catálogo de apps', exact: true }).getAttribute('aria-current'), 'page');
+        assert.equal(await frame.locator('body').evaluate(() => { try { void parent.document.body; return false; } catch { return true; } }), true);
+        const policy = await frame.locator('meta[http-equiv="Content-Security-Policy"]').first().getAttribute('content');
+        assert.match(policy, /connect-src 'none'/);
+        await frame.locator('[data-filter="search"]').first().fill('no matching record');
+        assert.match(await frame.locator('#dashboard-table tbody').innerText(), /No records|Sin registros/);
+        await frame.locator('#dashboard-filters button').first().click();
+        const checkSize = async () => {
+          const main = await page.locator('#main-content').boundingBox(), toolbar = await page.locator('.application-toolbar').boundingBox();
+          const box = await page.locator('.application-frame').boundingBox();
+          assert.equal(box.x, main.x);
+          assert.equal(box.width, main.width);
+          assert.ok(Math.abs(box.y - (toolbar.y + toolbar.height)) <= 1);
+          assert.ok(Math.abs(box.y + box.height - (main.y + main.height)) <= 1);
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        };
+        await checkSize();
+        const artifacts = process.env.TEKTONIK_APP_ACCESS_ARTIFACTS;
+        if (artifacts) await page.screenshot({ path: path.join(artifacts, 'application-desktop.png'), fullPage: true });
+        await page.reload();
+        await frame.locator('#dashboard-table tbody tr').first().waitFor();
+        await page.getByRole('link', { name: 'Volver', exact: true }).click();
+        await page.waitForURL(base + '/catalog?q=Approved');
+        await card.getByRole('button', { name: 'Detalles', exact: true }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Acceder', exact: true }).click();
+        await frame.locator('#dashboard-table tbody tr').first().waitFor();
+        assert.equal(await page.getByRole('dialog').count(), 0);
+        assert.equal((await post(page, '/api/workspace', { action: 'addToFlow', id: app.id, fields: {} })).status, 200);
+        await page.goto(base + '/mi-flow?view=cards&q=Approved');
+        await page.getByRole('button', { name: 'Acceder', exact: true }).click();
+        await page.waitForURL(`${base}/mi-flow?view=cards&q=Approved&open=${app.id}`);
+        await frame.locator('#dashboard-table tbody tr').first().waitFor();
+        assert.equal(await page.locator('.sidebar a[href="/mi-flow"][aria-current="page"]').count(), 1);
+        await page.setViewportSize({ width: 375, height: 812 });
+        await checkSize();
+        if (artifacts) await page.screenshot({ path: path.join(artifacts, 'application-mobile.png'), fullPage: true });
+        await page.getByRole('button', { name: 'Abrir navegación', exact: true }).click();
+        assert.equal(await page.getByRole('navigation', { name: 'Navegación principal', exact: true }).isVisible(), true);
+        await page.keyboard.press('Escape');
+        await page.getByRole('link', { name: 'Volver', exact: true }).click();
+        await page.waitForURL(base + '/mi-flow?view=cards&q=Approved');
+        await page.getByRole('button', { name: 'Detalles de la app', exact: true }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Acceder', exact: true }).click();
+        await frame.locator('#dashboard-table tbody tr').first().waitFor();
+        applicationSources.set(app.id, null);
+        await page.reload();
+        await page.getByTestId('application-view').getByRole('alert').waitFor();
+        assert.match(await page.getByTestId('application-view').innerText(), /no tiene HTML guardado/);
+        assert.equal(await page.locator('.application-frame').count(), 0);
+        applicationSources.set(app.id, sourceHtml);
+        await page.getByRole('button', { name: 'Reintentar', exact: true }).click();
+        await frame.locator('#dashboard-table tbody tr').first().waitFor();
+        app.reviewStatus = 'pending_review';
+        await page.reload();
+        await page.getByTestId('application-view').getByRole('alert').waitFor();
+        assert.equal(await page.locator('.application-frame').count(), 0);
+        assert.match(await page.getByTestId('application-view').innerText(), /ya no está aprobada/);
+      } finally {
+        await ctx.close(); createdApps.splice(0, 1); applicationSources.delete(app.id); flowEntries.clear();
       }
     });
     await run('Email sign-in submits once, shows progress and follows the authorized destination', async () => {

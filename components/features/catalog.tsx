@@ -8,9 +8,11 @@ import { PageHeading } from '@/components/ui/page-heading';
 import type { App } from '@/lib/domain/types';
 import { approvedCatalogApps } from '@/lib/data/mi-flow';
 import { AppCard, AppDetails, contentText, DemoNotice, Empty, Field, SelectField } from './shared';
+import { ApplicationView } from './application-view';
 
 export function CatalogScreen() {
   const params = useSearchParams();
+  if (params.has('open')) return <ApplicationView appId={params.get('open') || ''} />;
   const query = params.get('q') || '';
   return <CatalogContent key={query} initialQuery={query} />;
 }
