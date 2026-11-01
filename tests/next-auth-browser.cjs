@@ -318,6 +318,29 @@ async function main() {
     }
     assert.ok(ready, `Next not ready: ${logs}`);
     browser = await chromium.launch({ headless: true });
+    await run('Homepage works without historical datasets and exposes only current public assets', async () => {
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage();
+        const datasetRequests = [];
+        page.on('request', request => { if (new URL(request.url()).pathname === '/data.json') datasetRequests.push(request.url()); });
+        await page.setViewportSize({ width: 375, height: 812 });
+        await page.goto(base);
+        await page.getByRole('link', { name: 'Entrar al hub', exact: true }).first().waitFor();
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        assert.equal(await page.locator('.preview-kpis, .landing-metrics, .landing-pricing').count(), 0);
+        assert.doesNotMatch(await page.locator('main').innerText(), /fixture|demo local|Sin backend conectado/i);
+        await page.getByRole('button', { name: 'ES / EN', exact: true }).click();
+        await page.getByRole('link', { name: 'Enter the hub', exact: true }).first().waitFor();
+        await page.getByRole('button', { name: 'Data and privacy', exact: true }).click();
+        await page.getByRole('dialog').getByText(/business data is stored in InsForge/).waitFor();
+        assert.deepEqual(datasetRequests, []);
+        for (const pathname of ['/data.json', '/Old/index.html', '/my-flow.html']) {
+          assert.equal((await page.request.get(base + pathname)).status(), 404, pathname);
+        }
+        assert.equal((await page.request.get(base + '/engines/dashboard-kit.js')).status(), 200);
+      } finally { await ctx.close(); }
+    });
     await run('Simple login supports mobile, password visibility, keyboard errors and both languages', async () => {
       const ctx = await context();
       try {

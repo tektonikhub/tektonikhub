@@ -5,8 +5,8 @@ const root = path.resolve(__dirname, '..');
 const publicDir = path.join(root, 'public');
 fs.mkdirSync(path.join(publicDir, 'engines'), { recursive: true });
 fs.rmSync(path.join(publicDir, 'legacy'), { recursive: true, force: true });
-fs.copyFileSync(path.join(root, 'data.json'), path.join(publicDir, 'data.json'));
+fs.rmSync(path.join(publicDir, 'data.json'), { force: true });
 for (const name of ['studio-engine.js', 'dashboard-kit.js']) {
   fs.copyFileSync(path.join(root, 'lib', 'studio', 'runtime', name), path.join(publicDir, 'engines', name));
 }
-console.log('Fixture y motores actuales sincronizados; el archivo Old no se publica.');
+console.log('Motores de Studio sincronizados.');

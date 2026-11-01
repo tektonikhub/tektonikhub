@@ -36,7 +36,3 @@ export interface BLKRepository {
   deleteGovernancePolicy(id: string, version: number): Promise<void>;
   saveBrand(tokens: BrandTokens): Promise<void>;
 }
-export interface RepositoryStorage { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
-export interface RepositoryStorageEvent { key: string | null }
-export interface RepositoryEventTarget { addEventListener(type: 'storage', listener: (event: RepositoryStorageEvent) => void): void; removeEventListener(type: 'storage', listener: (event: RepositoryStorageEvent) => void): void }
-export interface LocalRepositoryOptions { storage: RepositoryStorage; sessionStorage: RepositoryStorage; eventTarget?: RepositoryEventTarget; fetch: (url: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>; clock?: () => Date; uuid?: () => string }

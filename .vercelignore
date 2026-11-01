@@ -4,6 +4,10 @@
 .github/
 skills/
 Old/
+old/
+data.json
+public/data.json
+my-flow.html
 docs/
 database/
 migrations/

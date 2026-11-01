@@ -10,7 +10,8 @@ or downgrade Tailwind to match generic SDK examples.
 The application uses InsForge identity and the remote business repository.
 Authentication is server-owned through the SDK SSR cookie helpers; roles and
 organizations come from `tk_identity`, never browser storage or role selectors.
-The local repository and `data.json` remain isolated demo/test fixtures.
+Business data is read exclusively from the remote authorized workspace.
+Archived prototypes and obsolete datasets are excluded from Git and deployment.
 Do not fall back to demo identities when a real account or backend is unavailable.
 The public URL, first-account activation and deployment are in `README.md`.
 
@@ -34,7 +35,7 @@ writing integration code.
 For schema changes, use CLI migrations and apply the documented SQL
 privileges and row-level security policies to application-owned objects in
 `public`. Browser demo roles are not a substitute for backend authorization.
-Do not seed business data or migrate the demo fixture without an explicit
+Do not seed business data or import historical datasets without an explicit
 request.
 
 ## Credentials

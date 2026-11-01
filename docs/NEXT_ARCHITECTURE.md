@@ -2,7 +2,7 @@
 
 ## Arquitectura actual
 
-La aplicación utiliza Next.js App Router, React, TypeScript estricto y Tailwind CSS 4. Las pantallas son React nativas; el prototipo archivado en `Old` no se publica ni se carga durante el build.
+La aplicación utiliza Next.js App Router, React, TypeScript estricto y Tailwind CSS 4. Las pantallas son React nativas.
 
 ```text
 Pantallas / hooks React
@@ -18,7 +18,7 @@ BLKProvider → RemoteBLKRepository
           PostgreSQL / InsForge
 ```
 
-El backend de identidad y negocio está conectado al proyecto `tektonik-hub`. La URL publicada, configuración local, activación de la primera cuenta y despliegue están en [README](../README.md). El adaptador local y `data.json` se conservan únicamente como fixtures aislados; no conceden acceso al portal.
+El backend de identidad y negocio está conectado al proyecto `tektonik-hub`. La URL publicada, activación de la primera cuenta y despliegue están en [README](../README.md). El negocio utiliza exclusivamente el espacio autorizado remoto; no depende de datasets de demostración.
 
 ## Ejecutar y publicar
 
@@ -47,7 +47,7 @@ hooks\                       Estado de negocio y borradores Studio
 lib\
   auth\                      Políticas de autenticación y destinos
   domain\                    Entidades y contratos TypeScript
-  data\                      Adaptador remoto, fixtures y validación
+  data\                      Adaptador remoto y validación
   config\                    Tokens y aplicación segura de marca
   studio\                    Motores, fuente remota y borradores locales
     runtime\                 Motores JavaScript propios
@@ -58,12 +58,11 @@ tests\                       Contratos, motores y HTTP/Chromium
 migrations\                  Historial aplicado de identidad y negocio
 database\                    Diseño PostgreSQL histórico/propuesto
 server\llm.cjs               API Azure opcional, exclusivamente local
-Old\                         Archivo fuera del runtime y del despliegue
 ```
 
 El layout declara las fuentes corporativas con fallback de sistema; no descarga fuentes durante el build. El shell mantiene topbar de 60 px, sidebar de 260 px, scroll independiente, navegación móvil, teclado, diálogos nativos y tokens compartidos.
 
-`predev` y `prebuild` ejecutan `scripts\sync-public.cjs`, que publica solo los motores actuales bajo `/engines` y el fixture sintético bajo `/data.json`. No publica `Old`, servidores, SQL, documentación ni credenciales. Los recursos generados están ignorados por Git.
+`predev` y `prebuild` ejecutan `scripts\sync-public.cjs`, que prepara solo los motores actuales bajo `/engines` y elimina las copias públicas de datasets y prototipos obsoletos. No publica servidores, SQL, documentación ni credenciales. Los recursos generados están ignorados por Git. La portada no muestra conteos de negocio ficticios ni carga archivos de datos.
 
 ## Rutas e identidad
 
@@ -150,6 +149,6 @@ npm run build
 
 `test:next` cubre contratos, repositorios, autenticación y borradores. `test:next:auth` usa Next y Chromium con un backend sintético de loopback: login, roles, cookies, renovación, contraseña, activación, recuperación de fuentes, permisos, conflictos y formularios. No crea cuentas ni envía correos cloud. `npm test` cubre motores, sandbox y API local.
 
-`test:next:llm` comprueba opcionalmente el puente Next → servicio local → Azure simulado. El runner histórico `test:next:browser` contiene escenarios del selector demo y no representa el acceso real. El validador de `database` comprueba el modelo histórico, no la migración aplicada.
+`test:next:llm` comprueba opcionalmente el puente Next → servicio local → Azure simulado. Las pruebas de autenticación utilizan respuestas sintéticas autocontenidas, sin depender de datasets históricos. El validador de `database` comprueba el modelo histórico, no la migración aplicada.
 
 Los tests no constituyen certificación, pentest, auditoría completa de accesibilidad ni prueba de carga. El acceso publicado con una cuenta real requiere que su responsable complete la activación; no se crean identidades cloud ficticias para aparentar esa comprobación.

@@ -2,12 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import seed from '../data.json';
 import { destinations, identifierSchema, loginDestination, loginSchema, newPasswordSchema, rolesForPath, trustedOrigin, validResetLink } from '../lib/auth/policy';
 import { ApiError } from '../lib/data/http-client';
 import { RemoteBLKRepository } from '../lib/data/remote-repository';
-import type { WorkspaceState } from '../lib/data/workspace';
-import { validateDataset } from '../lib/data/validation';
+import { parseWorkspace, type WorkspaceState } from '../lib/data/workspace';
 
 test('Login normalizes email and username without accepting role or organization overrides', () => {
   assert.equal(identifierSchema.parse('  Alice.Example@EXAMPLE.COM  '), 'alice.example@example.com');
@@ -64,9 +62,18 @@ test('Password reset accepts only complete InsForge reset links and enforces pas
 });
 
 function workspace(): WorkspaceState {
-  const data = validateDataset(structuredClone(seed));
-  const user = data.users.find(value => value.role === 'developer')!;
-  return { data, session: { userId: user.id, orgId: user.orgId, role: user.role } };
+  return parseWorkspace({
+    revision: 0,
+    session: { userId: 'test-developer', orgId: 'test-org', role: 'developer' },
+    users: [
+      { id: 'test-developer', orgId: 'test-org', role: 'developer', name: 'Test developer', initials: 'TD', dept: 'Testing' },
+      { id: 'test-admin', orgId: 'test-org', role: 'admin', name: 'Test admin', initials: 'TA', dept: 'Testing' },
+    ],
+    organizations: [{ id: 'test-org', name: 'Test organization', initials: 'TO', plan: 'test-plan', members: 2, compliance: null,
+      status: 'active', adminId: 'test-admin', createdAt: '2026-01-01', date: '2026-01-01', domain: '', lastAccess: '' }],
+    plans: [{ id: 'test-plan', name: 'Test plan', price: null }],
+    apps: [], reviews: [], events: [], policies: [], categories: [],
+  });
 }
 
 test('Unauthorized and blocked remote sessions discard private snapshots instead of using demo storage', async () => {

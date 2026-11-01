@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import seed from '../data.json';
+import { brandDefaults } from '../lib/data/workspace';
 import nextConfig from '../next.config';
 import { applyBrand, BRAND_MAP, validBrandValue } from '../lib/config/branding';
 import { limitedJSONText, localTarget, LocalLLMError, type LocalLLMEnvironment } from '../lib/server/local-llm-policy';
@@ -24,7 +24,7 @@ test('Next has no HTML aliases, archived rewrites or deprecated UI links', () =>
   assert.doesNotMatch(script, /copyFileSync[^\n]*(?:legacy|Old|\.html)/);
   assert.match(script, /'lib', 'studio', 'runtime'/);
 });
-test('Public preparation works without Old or assets and removes stale archived copies', t => {
+test('Public preparation needs no dataset and removes stale public demo data', t => {
   const root = mkdtempSync(join(tmpdir(), 'blk-public-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scripts = join(root, 'scripts');
@@ -32,15 +32,15 @@ test('Public preparation works without Old or assets and removes stale archived 
   const stale = join(root, 'public', 'legacy');
   for (const directory of [scripts, runtime, stale]) mkdirSync(directory, { recursive: true });
   copyFileSync(join('scripts', 'sync-public.cjs'), join(scripts, 'sync-public.cjs'));
-  writeFileSync(join(root, 'data.json'), '{"demo":true}');
+  writeFileSync(join(root, 'public', 'data.json'), '{"demo":true}');
   writeFileSync(join(stale, 'index.html'), 'stale published prototype');
   const engines = ['studio-engine.js', 'dashboard-kit.js'];
   for (const name of engines) writeFileSync(join(runtime, name), `current runtime: ${name}`);
   execFileSync(process.execPath, [join(scripts, 'sync-public.cjs')], { cwd: root, stdio: 'pipe' });
   assert.equal(existsSync(stale), false);
-  assert.deepEqual(readdirSync(join(root, 'public')).sort(), ['data.json', 'engines']);
+  assert.deepEqual(readdirSync(join(root, 'public')).sort(), ['engines']);
   assert.deepEqual(readdirSync(join(root, 'public', 'engines')).sort(), engines.sort());
-  assert.equal(readFileSync(join(root, 'public', 'data.json'), 'utf8'), '{"demo":true}');
+  assert.equal(existsSync(join(root, 'public', 'data.json')), false);
   for (const name of engines) assert.equal(readFileSync(join(root, 'public', 'engines', name), 'utf8'), `current runtime: ${name}`);
 });
 test('Platform headers disable sniffing and sensitive browser features', async () => {
@@ -49,11 +49,15 @@ test('Platform headers disable sniffing and sensitive browser features', async (
   assert.equal(headers?.find(header => header.key === 'X-Content-Type-Options')?.value, 'nosniff');
   assert.ok(headers?.find(header => header.key === 'Permissions-Policy')?.value.includes('camera=()'));
 });
-test('Tektonik hub branding covers fixture text and page metadata without changing persistence keys', () => {
-  const strings = (value: unknown): string[] => typeof value === 'string' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
-  for (const value of strings(seed)) assert.doesNotMatch(value, /\bBLK\b|blkunit(?:\.com|\.internal)|tektonik labs/i);
-  assert.match(seed.content.index.I18N.es.metaTitle, /^Tektonik hub/);
-  assert.match(seed.content.index.I18N.en.metaTitle, /^Tektonik hub/);
+test('The homepage has no obsolete dataset dependency or fabricated business counts', () => {
+  const page = readFileSync(join('app', 'page.tsx'), 'utf8');
+  const landing = readFileSync(join('components', 'layout', 'landing.tsx'), 'utf8');
+  assert.doesNotMatch(page, /data\.json|counts|seed/);
+  assert.doesNotMatch(landing, /counts\.|fixture|local demo|demo local|No connected backend|Sin backend conectado|role=superadmin/i);
+  assert.match(landing, /href="\/login"/);
+  assert.match(landing, /InsForge/);
+});
+test('Tektonik hub branding covers page metadata without changing persistence keys', () => {
   const layout = readFileSync(join('app', 'layout.tsx'), 'utf8');
   assert.match(layout, /applicationName: 'Tektonik hub'/);
   assert.match(layout, /siteName: 'Tektonik hub'/);
@@ -62,16 +66,16 @@ test('Tektonik hub branding covers fixture text and page metadata without changi
 });
 test('Brand tokens apply atomically with readable accent foreground', () => {
   const values = new Map<string, string>();
-  applyBrand(seed.config.brandDefaults, { setProperty: (key, value) => { values.set(key, value ?? ''); } });
+  applyBrand(brandDefaults, { setProperty: (key, value) => { values.set(key, value ?? ''); } });
   assert.equal(values.get('--accent'), '#FEFF44');
   assert.equal(values.get('--accent-on'), '#111111');
-  applyBrand({ ...seed.config.brandDefaults, accent: '#111111' }, { setProperty: (key, value) => { values.set(key, value ?? ''); } });
+  applyBrand({ ...brandDefaults, accent: '#111111' }, { setProperty: (key, value) => { values.set(key, value ?? ''); } });
   assert.equal(values.get('--accent-on'), '#FFFFFF');
   assert.equal(values.size, Object.keys(BRAND_MAP).length + 1);
 });
 test('Brand rejects CSS injection before applying any property', () => {
   let mutations = 0;
-  assert.throws(() => applyBrand({ ...seed.config.brandDefaults, bg: '#111111; background:url(https://example.invalid)' }, { setProperty: () => { mutations += 1; } }));
+  assert.throws(() => applyBrand({ ...brandDefaults, bg: '#111111; background:url(https://example.invalid)' }, { setProperty: () => { mutations += 1; } }));
   assert.equal(mutations, 0);
   assert.equal(validBrandValue('displayFont', 'url(https://example.invalid)'), false);
   assert.equal(validBrandValue('rCard', 'expression(alert(1))'), false);
