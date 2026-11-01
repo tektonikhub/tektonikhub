@@ -41,6 +41,9 @@ const validators = {
   deletePlan: z.object({}).strict(),
   savePolicy: policy, deletePolicy: z.object({}).strict(),
   saveGovernancePolicy: policy, deleteGovernancePolicy: z.object({}).strict(),
+  addToFlow: z.object({}).strict(),
+  removeFromFlow: z.object({}).strict(),
+  setFlowFavorite: z.object({ favorite: z.boolean() }).strict(),
 };
 const commandSchema = z.object({
   action: z.enum(Object.keys(validators)), id: uuid.nullable(), fields: z.unknown(),
@@ -60,9 +63,12 @@ export async function POST(request: Request) {
       'createOrganization', 'updateOrganization', 'deleteOrganization', 'setOrganizationStatus',
       'saveUser', 'deleteUser', 'inviteUser', 'setUserEnabled', 'saveCompanyProfile', 'deleteCompanyProfile',
       'saveBrand', 'savePlan', 'deletePlan', 'savePolicy', 'deletePolicy', 'saveGovernancePolicy', 'deleteGovernancePolicy',
+      'addToFlow', 'removeFromFlow', 'setFlowFavorite',
     ]).parse(input.action);
     const fields = validators[key].parse(input.fields);
-    const result = await client.database.rpc('tk_command', { p_action: key, p_id: input.id, p_fields: fields, p_version: input.version ?? null });
+    const result = ['addToFlow', 'removeFromFlow', 'setFlowFavorite'].includes(key)
+      ? await client.database.rpc('tk_flow_command', { p_action: key, p_id: uuid.parse(input.id), p_fields: fields })
+      : await client.database.rpc('tk_command', { p_action: key, p_id: input.id, p_fields: fields, p_version: input.version ?? null });
     if (result.error) databaseError(result.error);
     const value = z.object({ id: uuid, invitationUserId: uuid.optional() }).parse(result.data);
     if (value.invitationUserId) await sendAccountActivation(identityAdminClient(), value.invitationUserId);

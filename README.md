@@ -18,6 +18,7 @@ El flujo de trabajo comprende creación, envío a revisión, solicitud de cambio
 | Acceso | `/login` |
 | Activación y contraseña | `/reset-password` |
 | Catálogo aprobado | `/catalog` |
+| Mi Flow y mini apps personales | `/mi-flow` |
 | Perfil y envíos | `/profile` |
 | Organización y gestión | `/company` |
 | Creación conversacional | `/studio` |
@@ -50,6 +51,10 @@ Los enlaces utilizan `APP_URL` o `NEXT_PUBLIC_APP_URL`, y sus destinos deben est
 
 ## Arquitectura y datos
 
+**Mi Flow** reúne las mini apps que cada usuario añade desde el catálogo de su organización. En las fichas, «Añadir» aparece entre «Detalles» y «Acceder» y pasa a «Añadida» al guardar, sin duplicados. La selección y los favoritos se guardan en InsForge, no en el navegador, y son privados incluso frente a otros administradores.
+
+El Flowverse ofrece vistas órbita y tarjetas, navegación por flechas o arrastre, búsqueda y colecciones por área. Se pueden marcar favoritos, consultar detalles y retirar mini apps sin eliminar las aplicaciones del catálogo. Las órbitas muestran hasta ocho mini apps a la vez; las flechas recorren toda la selección. Solo aparecen apps aprobadas de la organización activa del usuario: si se archivan, vuelven a revisión o la organización deja de estar activa, dejan de mostrarse. No se incluyen agentes, creación de flows, workflows ni automatizaciones del prototipo. «Acceder» conserva el comportamiento actual del catálogo: no ejecuta ni despliega código.
+
 ```text
 React / hooks → BLKProvider → RemoteBLKRepository → API Next.js
                                                     ↓
@@ -69,6 +74,8 @@ La interfaz se centra en conversación y vista previa, sin encabezado grande ni 
 El proyecto cloud **`tektonik-hub`** está en **EU Central (`eu-central`)**. Su backend es `https://vxpd968k.eu-central.insforge.app`; se administra desde el [panel de InsForge](https://insforge.dev/dashboard/project/621de563-b6b4-4041-b541-579e6128a916).
 
 El esquema base es `migrations/20261101075915_identity-workspace.sql`, con 15 tablas de negocio, RPC autorizados y RLS. `migrations/20261101180821_studio-admin-access.sql` amplía los permisos de envío y corrección a los administradores sin modificar el resto de los controles del RPC. El diseño histórico de `database` no debe aplicarse sobre estas migraciones.
+
+`migrations/20261101182647_mi-flow.sql` añade `user_flow_apps`, lectura privada con RLS y RPC que obtienen la identidad del servidor y comprueban organización y aprobación. No cambia los datos de las tablas existentes ni importa apps del HTML de referencia.
 
 ## Despliegue
 

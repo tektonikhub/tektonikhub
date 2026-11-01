@@ -35,4 +35,7 @@ export interface BLKRepository {
   saveGovernancePolicy(id: string | null, fields: PolicyFields, expectedVersion?: number): Promise<string>;
   deleteGovernancePolicy(id: string, version: number): Promise<void>;
   saveBrand(tokens: BrandTokens): Promise<void>;
+  addToFlow(appId: string): Promise<void>;
+  removeFromFlow(appId: string): Promise<void>;
+  setFlowFavorite(appId: string, favorite: boolean): Promise<void>;
 }

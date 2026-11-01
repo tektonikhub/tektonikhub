@@ -37,6 +37,7 @@ const referenceFile = { name: 'reference.csv', type: 'text/csv', size: 42 };
 let sourceVersion = 3, sourceReadFailure = false;
 const sourceReads = [], commands = [];
 const createdApps = [];
+const flowEntries = new Map();
 let base, environment, next, browser, logs = '';
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -110,6 +111,24 @@ const backend = http.createServer(async (request, response) => {
     if (url.pathname === '/api/database/rpc/tk_workspace') {
       if (!account?.enabled || !account.verified) return fail(response, 401);
       return send(response, 200, workspace(account));
+    }
+    if (url.pathname === '/api/database/rpc/tk_flow_entries') {
+      if (!account?.enabled || !account.verified) return fail(response, 401);
+      return send(response, 200, [...(flowEntries.get(account.id)?.values() || [])]
+        .filter(entry => createdApps.some(app => app.id === entry.appId && app.orgId === orgId && app.reviewStatus === 'approved')));
+    }
+    if (url.pathname === '/api/database/rpc/tk_flow_command') {
+      assert.ok(account?.enabled && account.verified);
+      assert.deepEqual(Object.keys(body).sort(), ['p_action', 'p_fields', 'p_id']);
+      const app = createdApps.find(app => app.id === body.p_id && app.orgId === orgId && app.reviewStatus === 'approved');
+      if (!app && body.p_action !== 'removeFromFlow') return send(response, 403, { code: '42501', message: 'App unavailable' });
+      if (!flowEntries.has(account.id)) flowEntries.set(account.id, new Map());
+      const entries = flowEntries.get(account.id);
+      if (body.p_action === 'addToFlow') {
+        if (!entries.has(app.id)) entries.set(app.id, { appId: app.id, favorite: false, createdAt: '2026-11-01T12:00:00Z' });
+      } else if (body.p_action === 'setFlowFavorite') entries.get(app.id).favorite = body.p_fields.favorite;
+      else entries.delete(body.p_id);
+      return send(response, 200, { id: body.p_id });
     }
     if (['/api/database/records/apps', '/api/database/records/app_versions'].includes(url.pathname)) {
       assert.ok(account?.enabled && account.verified, 'Source must use the authenticated user token');
@@ -400,6 +419,88 @@ async function main() {
         await page.getByRole('button', { name: 'Español', exact: true }).click();
         await page.getByRole('heading', { name: 'Inicia sesión', exact: true }).waitFor();
       } finally { await ctx.close(); }
+    });
+    await run('Mi Flow persists catalog selections, favorites and both views with keyboard, drag and mobile support', async () => {
+      const seed = workspace(accounts[0]).apps[0];
+      const miniApps = Array.from({ length: 12 }, (_, index) => ({
+        ...seed, id: `00000000-0000-4000-8000-${String(800 + index).padStart(12, '0')}`,
+        title: `Mini app ${String(index + 1).padStart(2, '0')}`, reviewStatus: 'approved', attachments: [], version: 1,
+      }));
+      createdApps.push(...miniApps);
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage();
+        await login(page, 'catalog', '/mi-flow');
+        await page.getByRole('heading', { name: 'Tu Flowverse empieza contigo.' }).waitFor();
+        await page.getByRole('link', { name: 'Añadir mini apps', exact: true }).click();
+        const card = page.locator('.business-app-card').filter({ has: page.getByRole('heading', { name: 'Mini app 01', exact: true }) });
+        await card.waitFor();
+        assert.deepEqual(await card.locator('.business-actions button').allTextContents(), ['Detalles', 'Añadir', 'Acceder']);
+        await card.getByRole('button', { name: 'Añadir a Mi Flow', exact: true }).click();
+        await card.getByRole('button', { name: 'Añadida a Mi Flow', exact: true }).waitFor();
+        assert.equal(await card.getByRole('button', { name: 'Añadida a Mi Flow', exact: true }).isDisabled(), true);
+        for (const app of miniApps) assert.equal((await post(page, '/api/workspace', { action: 'addToFlow', id: app.id, fields: {} })).status, 200);
+        await page.goto(base + '/mi-flow');
+        await page.locator('.flow-orbit-app').first().waitFor();
+        assert.equal(await page.locator('.flow-orbit-app').count(), 8);
+        await page.getByRole('button', { name: 'Siguiente mini app', exact: true }).click();
+        await page.locator('.flow-orbit-caption strong').filter({ hasText: 'Mini app 02' }).waitFor();
+        await page.locator('.flow-orbit-stage').focus();
+        await page.keyboard.press('ArrowLeft');
+        await page.locator('.flow-orbit-caption strong').filter({ hasText: 'Mini app 01' }).waitFor();
+        await page.getByRole('button', { name: 'Mini app anterior', exact: true }).click();
+        await page.locator('.flow-orbit-caption strong').filter({ hasText: 'Mini app 12' }).waitFor();
+        assert.equal(await page.locator('.flow-orbit-app').count(), 4);
+        await page.getByRole('button', { name: 'Siguiente mini app', exact: true }).click();
+        await page.getByRole('button', { name: 'Añadir a favoritos', exact: true }).click();
+        await page.getByRole('button', { name: 'Quitar de favoritos', exact: true }).waitFor();
+        await page.reload();
+        assert.equal(await page.getByRole('button', { name: 'Quitar de favoritos', exact: true }).getAttribute('aria-pressed'), 'true');
+        const artifacts = process.env.TEKTONIK_FLOW_ARTIFACTS;
+        if (artifacts) await page.screenshot({ path: path.join(artifacts, 'flow-orbit-desktop.png'), fullPage: true });
+        await page.getByRole('button', { name: 'Tarjetas', exact: true }).click();
+        assert.equal(await page.locator('.flow-review-card').count(), 12);
+        if (artifacts) await page.screenshot({ path: path.join(artifacts, 'flow-cards-desktop.png'), fullPage: true });
+        await page.getByRole('button', { name: 'Favoritas 1', exact: true }).click();
+        assert.equal(await page.locator('.flow-review-card').count(), 1);
+        await page.getByLabel('Buscar en Mi Flow', { exact: true }).fill('no existe');
+        await page.getByRole('heading', { name: 'No hay mini apps en esta órbita.' }).waitFor();
+        await page.getByRole('button', { name: 'Ver todas mis mini apps', exact: true }).click();
+        assert.equal(await page.locator('.flow-review-card').count(), 12);
+        await page.getByRole('button', { name: 'Órbita', exact: true }).click();
+        await page.setViewportSize({ width: 375, height: 812 });
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        await page.waitForTimeout(450);
+        const bounds = await page.locator('.flow-orbit-stage').boundingBox();
+        for (const node of await page.locator('.flow-orbit-app').all()) {
+          const box = await node.boundingBox();
+          assert.ok(box.x >= bounds.x && box.x + box.width <= bounds.x + bounds.width + 1, 'Orbit node must fit mobile stage');
+        }
+        if (artifacts) await page.screenshot({ path: path.join(artifacts, 'flow-orbit-mobile.png'), fullPage: true });
+        await page.locator('.flow-orbit-stage').scrollIntoViewIfNeeded();
+        const stage = await page.locator('.flow-orbit-stage').boundingBox();
+        await page.mouse.move(stage.x + 20, stage.y + 20); await page.mouse.down();
+        await page.mouse.move(stage.x + 80, stage.y + 20, { steps: 5 }); await page.mouse.up();
+        await page.locator('.flow-orbit-caption strong').filter({ hasText: 'Mini app 12' }).waitFor();
+        await page.getByRole('button', { name: 'Quitar de Mi Flow', exact: true }).click();
+        await page.locator('.flow-orbit-caption span').filter({ hasText: '/ 11' }).waitFor();
+        await page.reload();
+        assert.equal(await page.locator('.flow-stats > div').first().locator('strong').innerText(), '11');
+        const before = flowEntries.get(accounts[1].id).size;
+        const rejected = await post(page, '/api/workspace', { action: 'addToFlow', id: miniApps[0].id, fields: { userId: accounts[0].id } });
+        assert.equal(rejected.status, 400);
+        assert.equal(flowEntries.get(accounts[1].id).size, before);
+        miniApps[0].reviewStatus = 'pending_review';
+        await page.reload();
+        assert.equal(await page.locator('.flow-stats > div').first().locator('strong').innerText(), '10');
+        const other = await context();
+        try {
+          const otherPage = await other.newPage(); await login(otherPage, 'admin', '/mi-flow');
+          await otherPage.getByRole('heading', { name: 'Tu Flowverse empieza contigo.' }).waitFor();
+        } finally { await other.close(); }
+      } finally {
+        await ctx.close(); flowEntries.clear(); createdApps.splice(0, miniApps.length);
+      }
     });
     await run('Email sign-in submits once, shows progress and follows the authorized destination', async () => {
       const ctx = await context();

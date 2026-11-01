@@ -9,6 +9,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import type { App, Dataset, JSONValue, Policy, ReviewAction, Role, User } from '@/lib/domain/types';
 import { studioRoles } from '@/lib/auth/policy';
+import { AddToFlowButton } from './flow-actions';
 
 export const roleLabels: Record<Role, string> = { developer: 'Developer', catalog: 'Empleado', admin: 'Administrador', superadmin: 'Super administrador' };
 export const reviewStates = ['pending_review', 'changes_requested', 'rejected', 'approved'] as const;
@@ -56,11 +57,15 @@ export function StatusFilter({ value, onChange }: { value: string; onChange: (va
   return <SelectField label="Estado de revisión" value={value} onChange={onChange}><option value="">Todos los estados</option>{reviewStates.map(status => <option key={status} value={status}>{data.config.statusLabels[status]}</option>)}</SelectField>;
 }
 export function AppCard({ app, onDetails, children, catalog = false }: { app: App; onDetails: (app: App) => void; children?: ReactNode; catalog?: boolean }) {
-  const { data, notify } = useBLK();
+  const { data } = useBLK();
   const author = data.users.find(user => user.id === app.authorId);
   const category = data.categories.find(category => category.id === app.area)?.label || app.area;
   const description = catalog && app.version === 1 ? contentText(data, `catalog.appDescriptions.${app.id}`, app.desc) : app.desc;
-  return <article className="business-app-card"><div className="business-card-top"><h3>{app.title}</h3><span className="business-chip">{category}</span></div><p>{description}</p><div className="business-author"><span className="business-avatar">{author?.initials || 'TH'}</span><span>{author ? <Link href={`/profile?user=${encodeURIComponent(author.id)}`}>{author.name}</Link> : 'Autor no disponible'}<small>{author?.dept}</small></span></div><div className="business-card-top"><Badge status={app.reviewStatus}>{data.config.statusLabels[app.reviewStatus]}</Badge>{!catalog && <span className="business-meta">{app.ticket} · v{app.version}</span>}</div><div className="business-actions"><Button variant="secondary" onClick={() => onDetails(app)}>{catalog ? 'Detalles' : 'Detalles e historial'}</Button>{catalog && <Button onClick={() => notify(`DEMO: no se ejecuta ni despliega código. ${app.title}`)}>Acceder</Button>}{children}</div></article>;
+  return <article className="business-app-card"><div className="business-card-top"><h3>{app.title}</h3><span className="business-chip">{category}</span></div><p>{description}</p><div className="business-author"><span className="business-avatar">{author?.initials || 'TH'}</span><span>{author ? <Link href={`/profile?user=${encodeURIComponent(author.id)}`}>{author.name}</Link> : 'Autor no disponible'}<small>{author?.dept}</small></span></div><div className="business-card-top"><Badge status={app.reviewStatus}>{data.config.statusLabels[app.reviewStatus]}</Badge>{!catalog && <span className="business-meta">{app.ticket} · v{app.version}</span>}</div><div className="business-actions"><Button variant="secondary" onClick={() => onDetails(app)}>{catalog ? 'Detalles' : 'Detalles e historial'}</Button>{catalog && <><AddToFlowButton appId={app.id} /><AppAccessButton app={app} /></>}{children}</div></article>;
+}
+export function AppAccessButton({ app }: { app: App }) {
+  const { notify } = useBLK();
+  return <Button onClick={() => notify(`DEMO: no se ejecuta ni despliega código. ${app.title}`)}>Acceder</Button>;
 }
 function safeUrl(value: string): string | undefined { try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) ? url.href : undefined; } catch { return undefined; } }
 export function AppDetails({ app: snapshot, onClose, catalog = false }: { app: App; onClose: () => void; catalog?: boolean }) {

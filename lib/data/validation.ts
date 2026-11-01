@@ -14,6 +14,7 @@ const schema = z.object({
   schemaVersion: z.literal(1), datasetVersion: z.string().min(1), revision: natural,
   config: z.object({ defaultOrgId: id, defaultAuthorId: id, demoRoles: z.object({ developer: id, catalog: id, admin: id, superadmin: id }), upload: z.object({ maxFiles: natural, maxBytes: natural }), brandDefaults: brandSchema, brandPresets: z.record(z.string(), brandSchema), statusLabels: z.object({ approved: z.string(), pending_review: z.string(), rejected: z.string(), changes_requested: z.string() }) }),
   categories: z.array(z.object({ id, label: z.string() })), content: z.record(z.string(), json),
+  myFlow: z.array(z.object({ appId: id, favorite: z.boolean(), createdAt: z.iso.datetime({ offset: true }) }).strict()).max(1000),
   organizations: z.array(z.object({ id, name: z.string().min(1), initials: z.string(), plan: id, members: natural, compliance: z.number().finite().nullable(), status: z.enum(['active', 'active-amber', 'suspended', 'pending']), adminId: id, createdAt: z.string(), date: z.string(), domain: z.string(), lastAccess: z.string(), brand: brandSchema.optional(), profile: z.object({ bio: z.string().max(2000), bannerTitle: z.string().max(160), bannerDesc: z.string().max(2000) }).optional(), apps: natural.optional(), pending: natural.optional(), system: z.boolean().optional() })),
   users: z.array(z.object({ id, orgId: id, role: z.enum(roles), name: z.string().min(1), initials: z.string(), dept: z.string(), email: z.string().optional(), username: z.string().optional(), enabled: z.boolean().optional(), accountStatus: z.enum(['reserved', 'sent', 'failed', 'active']).optional(), deletedAt: z.string().nullable().optional() })),
   apps: z.array(z.object({ id, orgId: id, authorId: id, title: z.string(), area: id, desc: z.string(), longDesc: z.string().optional(), tagline: z.string(), impact: z.string(), dataNote: z.string(), repoUrl: z.string(), tech: strings, attachments: z.array(attachment), tags: strings, security: strings, metrics: z.object({ hours: z.number().finite().nonnegative(), users: natural, rating: z.union([z.string(), z.number().finite()]) }), reviewStatus: z.enum(['approved', 'pending_review', 'changes_requested', 'rejected']), maturity: z.string(), version, ticket: z.string(), createdAt: z.string(), updatedAt: z.string(), generatedHtml: z.string().max(300000).optional(), environment: z.string().optional(), certificate: z.string().optional() })),
@@ -31,6 +32,13 @@ export function validateDataset(input: unknown, { scoped = false }: { scoped?: b
   const orgs = new Map(data.organizations.map(row => [row.id, row]));
   const users = new Map(data.users.map(row => [row.id, row]));
   const apps = new Map(data.apps.map(row => [row.id, row]));
+  if (new Set(data.myFlow.map(entry => entry.appId)).size !== data.myFlow.length) throw new Error('Mini apps duplicadas en Mi Flow.');
+  for (const entry of data.myFlow) {
+    const app = apps.get(entry.appId);
+    const org = app && orgs.get(app.orgId);
+    if (!app || app.orgId !== data.config.defaultOrgId || app.reviewStatus !== 'approved'
+      || !org || !['active', 'active-amber'].includes(org.status)) throw new Error('Mini app no autorizada en Mi Flow.');
+  }
   for (const org of data.organizations) {
     const admin = users.get(org.adminId);
     if (!data.plans.some(plan => plan.id === org.plan) || !admin || admin.orgId !== org.id || !['admin', 'superadmin'].includes(admin.role)) throw new Error('Organización o administrador inválido.');

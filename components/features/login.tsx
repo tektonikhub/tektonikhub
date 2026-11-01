@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
-import { destinations } from '@/lib/auth/policy';
+import { rolesForPath } from '@/lib/auth/policy';
 import { announceAuthChange, requestJson } from '@/lib/data/http-client';
 import { Field } from './shared';
 
@@ -34,7 +34,7 @@ export function LoginScreen({ setupRequired = false, initialError = '' }: { setu
     const fields = new FormData(event.currentTarget);
     setBusy(true); setError('');
     try {
-      const result = z.object({ redirectTo: z.enum([...Object.values(destinations), '/company', '/studio']) }).parse(
+      const result = z.object({ redirectTo: z.string().refine(path => rolesForPath(path) !== undefined, 'Destino de acceso no autorizado.') }).parse(
         await requestJson('/api/auth/login', { method: 'POST', body: JSON.stringify({
           identifier: fields.get('identifier'), password: fields.get('password'),
           ...(params.get('next') ? { next: params.get('next') } : {}),

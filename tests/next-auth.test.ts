@@ -86,7 +86,7 @@ function workspace(): WorkspaceState {
     organizations: [{ id: 'test-org', name: 'Test organization', initials: 'TO', plan: 'test-plan', members: 2, compliance: null,
       status: 'active', adminId: 'test-admin', createdAt: '2026-01-01', date: '2026-01-01', domain: '', lastAccess: '' }],
     plans: [{ id: 'test-plan', name: 'Test plan', price: null }],
-    apps: [], reviews: [], events: [], policies: [], categories: [],
+    apps: [], reviews: [], events: [], policies: [], categories: [], myFlow: [],
   });
 }
 

@@ -20,7 +20,7 @@ export class RemoteBLKRepository implements BLKRepository {
   private emit() { if (!this.destroyed) for (const listener of this.listeners) listener(); }
   private invalidate() {
     this.session = null;
-    this.data = { ...this.data, organizations: [], users: [], apps: [], reviews: [], events: [], plans: [], policies: [] };
+    this.data = { ...this.data, organizations: [], users: [], apps: [], reviews: [], events: [], plans: [], policies: [], myFlow: [] };
     this.emit();
   }
   private async request(url: string, init?: RequestInit) {
@@ -123,4 +123,7 @@ export class RemoteBLKRepository implements BLKRepository {
   saveGovernancePolicy(id: string | null, fields: PolicyFields, version?: number) { return this.command('saveGovernancePolicy', id, fields, version); }
   async deleteGovernancePolicy(id: string, version: number) { await this.command('deleteGovernancePolicy', id, {}, version); }
   async saveBrand(tokens: BrandTokens) { await this.command('saveBrand', null, tokens); }
+  async addToFlow(appId: string) { await this.command('addToFlow', appId); }
+  async removeFromFlow(appId: string) { await this.command('removeFromFlow', appId); }
+  async setFlowFavorite(appId: string, favorite: boolean) { await this.command('setFlowFavorite', appId, { favorite }); }
 }

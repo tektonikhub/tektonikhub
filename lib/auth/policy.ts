@@ -8,6 +8,7 @@ export const studioRoles: readonly Role[] = ['developer', 'admin', 'superadmin']
 const access: Record<string, readonly Role[]> = {
   '/profile': ['developer', 'catalog', 'admin', 'superadmin'],
   '/catalog': ['developer', 'catalog', 'admin', 'superadmin'],
+  '/mi-flow': ['developer', 'catalog', 'admin', 'superadmin'],
   '/company': ['developer', 'catalog', 'admin', 'superadmin'],
   '/studio': studioRoles,
   '/admin': ['admin', 'superadmin'],

@@ -3,6 +3,7 @@ import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import { cookies, headers } from 'next/headers';
 import { getAccessTokenCookieName } from '@insforge/sdk/ssr';
+import { z } from 'zod';
 import type { Role } from '@/lib/domain/types';
 import { validateSession } from '@/lib/data/validation';
 import { parseWorkspace } from '@/lib/data/workspace';
@@ -32,7 +33,9 @@ export async function workspaceForUser() {
   const { client } = await authenticatedContext();
   const { data, error } = await client.database.rpc('tk_workspace');
   if (error) databaseError(error);
-  return parseWorkspace(data);
+  const flow = await client.database.rpc('tk_flow_entries');
+  if (flow.error) databaseError(flow.error);
+  return parseWorkspace({ ...z.record(z.string(), z.unknown()).parse(data), myFlow: flow.data });
 }
 export async function requireAccount(roles?: readonly Role[], next?: string) {
   let context: Awaited<ReturnType<typeof authenticatedContext>>;

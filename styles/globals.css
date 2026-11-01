@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./business.css";
 @import "./studio-next.css";
+@import "./mi-flow.css";
 
 :root {
   --bg:#EFEFEB; --bg-2:#E4E4DF; --card:#FFFFFF; --fg:#111111; --fg-soft:#444444; --muted:#777777; --line:#E2E2DE; --accent:#FEFF44; --accent-on:#111111;
