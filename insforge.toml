@@ -1,0 +1,18 @@
+[auth]
+require_email_verification = true
+verify_email_method = "link"
+reset_password_method = "link"
+# The managed lifecycle hook rejects any email not preapproved by an administrator.
+# The SDK provisions approved accounts through signUp; there is no public signup UI.
+disable_signup = false
+allowed_redirect_urls = [
+  "https://vxpd968k.insforge.site/reset-password",
+  "https://vxpd968k.insforge.site/reset-password?activate=1",
+]
+
+[auth.password]
+min_length = 15
+require_number = false
+require_lowercase = false
+require_uppercase = false
+require_special_char = false

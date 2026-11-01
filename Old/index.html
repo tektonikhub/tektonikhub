@@ -1,0 +1,2418 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light only">
+  <title id="meta-title"></title>
+  <meta name="description" id="meta-desc"
+    content="">
+
+  <!-- Open Graph / Redes Sociales -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Tektonik hub">
+  <meta property="og:title" id="og-title" content="">
+  <meta property="og:description" id="og-desc"
+    content="">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#111111">
+
+  <!-- Tipografías de alta gama -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,700;0,800;1,900&family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap"
+    rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #EFEFEB;
+      --bg-2: #E4E4DF;
+      --card: #FFFFFF;
+      --fg: #111111;
+      --fg-soft: #444444;
+      --muted: #777777;
+      --line: #E2E2DE;
+      --accent: #FEFF44;
+      --accent-on: #111111;
+      --display-font: 'Barlow', system-ui, -apple-system, sans-serif;
+      --body-font: 'DM Sans', system-ui, -apple-system, sans-serif;
+      --mono-font: 'JetBrains Mono', monospace;
+      --r-card: 18px;
+      --r-tile: 14px;
+      --wrap: 1140px;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      font-family: var(--body-font);
+      color: var(--fg);
+      background: var(--card);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img,
+    svg {
+      display: block;
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: var(--wrap);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    .ico {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex: none;
+    }
+
+    /* ── Tipografía ── */
+    h1,
+    h2,
+    h3,
+    .display {
+      font-family: var(--display-font);
+      letter-spacing: -0.025em;
+      line-height: 1.02;
+      text-wrap: balance;
+    }
+
+    .ln {
+      display: block;
+    }
+
+    h1 {
+      font-size: clamp(38px, 6.5vw, 78px);
+      font-weight: 800;
+    }
+
+    h2 {
+      font-size: clamp(30px, 4.4vw, 52px);
+      font-weight: 800;
+    }
+
+    h3 {
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.01em;
+    }
+
+    .lead {
+      font-size: clamp(16.5px, 1.55vw, 19.5px);
+      color: var(--fg-soft);
+      line-height: 1.55;
+      max-width: 600px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .eyebrow::before {
+      content: '';
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 1.5px solid #D9DA1E;
+    }
+
+    .sec-head {
+      max-width: 780px;
+      margin-bottom: 44px;
+    }
+
+    .sec-head .lead {
+      margin-top: 14px;
+    }
+
+    .sec-head .eyebrow {
+      margin-bottom: 16px;
+    }
+
+    /* ── Botones ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 15px 24px;
+      border-radius: 12px;
+      border: 1.5px solid transparent;
+      font-family: var(--body-font);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .12s ease, opacity .12s ease, background .12s ease, border-color .12s ease;
+      white-space: nowrap;
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+      opacity: .9;
+    }
+
+    .btn-dark {
+      background: var(--fg);
+      color: #fff;
+    }
+
+    .btn-dark:hover {
+      background: #000;
+    }
+
+    .btn-yellow {
+      background: var(--accent);
+      color: var(--accent-on);
+      border-color: #DADA1E;
+    }
+
+    .btn-yellow:hover {
+      background: #f4f535;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--fg);
+      border-color: var(--line);
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--fg);
+    }
+
+    .btn-ghost-light {
+      background: transparent;
+      color: #fff;
+      border-color: rgba(255, 255, 255, .28);
+    }
+
+    .btn-ghost-light:hover {
+      border-color: #fff;
+    }
+
+    .btn-sm {
+      padding: 10px 16px;
+      font-size: 14px;
+      border-radius: 10px;
+    }
+
+    /* ── Barra de Navegación ── */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(255, 255, 255, .88);
+      backdrop-filter: saturate(160%) blur(14px);
+      -webkit-backdrop-filter: saturate(160%) blur(14px);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .nav .wrap {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+    }
+
+    .brand-word {
+      font-family: var(--display-font);
+      font-weight: 800;
+      font-size: 23px;
+      letter-spacing: -0.03em;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .brand-badge {
+      font-family: var(--mono-font);
+      font-size: 10px;
+      font-weight: 700;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      padding: 2px 7px;
+      border-radius: 6px;
+      color: var(--fg);
+      letter-spacing: .05em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--fg-soft);
+    }
+
+    .nav-links a:hover {
+      color: var(--fg);
+    }
+
+    .nav-cta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .nav-cta .login {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--fg-soft);
+      padding: 8px 6px;
+      white-space: nowrap;
+    }
+
+    .nav-cta .login:hover {
+      color: var(--fg);
+    }
+
+    .lang {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      background: #fff;
+    }
+
+    .lang button {
+      border: none;
+      background: transparent;
+      padding: 5px 8px;
+      border-radius: 999px;
+      color: var(--muted);
+      line-height: 1;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .15s ease;
+    }
+
+    .lang button:hover {
+      color: var(--fg);
+    }
+
+    .lang button[aria-current="page"] {
+      background: var(--fg);
+      color: #fff;
+    }
+
+    .nav-burger {
+      display: none;
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--fg);
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .nav-burger .ico {
+      width: 20px;
+      height: 20px;
+    }
+
+    .nav-burger .x {
+      display: none;
+    }
+
+    html.nav-open .nav-burger .bars {
+      display: none;
+    }
+
+    html.nav-open .nav-burger .x {
+      display: block;
+    }
+
+    .nav-menu {
+      display: none;
+    }
+
+    @media (max-width: 960px) {
+
+      .nav-links,
+      .nav-cta .lang,
+      .nav-cta .login {
+        display: none;
+      }
+
+      .nav-burger {
+        display: inline-flex;
+      }
+
+      html.nav-open .nav-menu {
+        display: block;
+      }
+
+      .nav-menu {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 100%;
+        background: #fff;
+        border-bottom: 1px solid var(--line);
+        padding: 8px 24px 22px;
+        box-shadow: 0 24px 40px -24px rgba(0, 0, 0, .25);
+      }
+
+      .nav-menu .sec {
+        display: block;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--fg);
+      }
+
+      .nav-menu .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-top: 16px;
+      }
+
+      .nav-menu .login {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--fg-soft);
+      }
+    }
+
+    /* ── Hero ── */
+    .hero {
+      padding: clamp(52px, 8.5vw, 110px) 0 24px;
+      overflow: hidden;
+    }
+
+    .hero .wrap {
+      display: grid;
+      grid-template-columns: 1.08fr 1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .hero-copy {
+      max-width: 610px;
+      container-type: inline-size;
+    }
+
+    .hero-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px 7px 8px;
+      border-radius: 999px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--fg-soft);
+      margin-bottom: 24px;
+    }
+
+    .hero-pill b {
+      background: var(--fg);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 999px;
+    }
+
+    .hero h1 {
+      margin-bottom: 22px;
+      font-size: min(72px, 10.5cqi);
+    }
+
+    .hero h1 .yl {
+      position: relative;
+      display: inline-block;
+    }
+
+    .hero h1 .yl::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: .06em;
+      height: .22em;
+      background: var(--accent);
+      z-index: -1;
+      border-radius: 3px;
+    }
+
+    .hero .lead {
+      margin-bottom: 28px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .hero-note {
+      font-size: 13.5px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 18px;
+    }
+
+    .hero-note span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hero-note .ico {
+      width: 15px;
+      height: 15px;
+    }
+
+    .hero-visual {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 20px;
+      padding: 24px 0 0;
+      min-height: 560px;
+    }
+
+    @media (max-width: 960px) {
+      .hero .wrap {
+        grid-template-columns: 1fr;
+        gap: 28px;
+      }
+
+      .hero-visual {
+        min-height: 0;
+        padding-top: 12px;
+      }
+    }
+
+    /* ── Wireframe Mockups de Enterprise Vibe Hub ── */
+    .phone {
+      width: 260px;
+      flex: none;
+      background: #fff;
+      border: 2px solid var(--fg);
+      border-radius: 38px;
+      padding: 8px;
+      box-shadow: 0 24px 50px -24px rgba(0, 0, 0, .25);
+      transition: transform .3s ease;
+    }
+
+    .phone-screen {
+      background: #fff;
+      border: 1.5px solid var(--fg);
+      border-radius: 30px;
+      overflow: hidden;
+      height: 512px;
+      position: relative;
+      font-size: 10px;
+      color: var(--fg);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .phone-screen::before {
+      content: '';
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 70px;
+      height: 18px;
+      border: 1.5px solid var(--fg);
+      background: #fff;
+      border-radius: 12px;
+      z-index: 3;
+    }
+
+    .phone.p2 {
+      transform: translateY(36px) rotate(2deg);
+    }
+
+    /* Tarjeta flotante de impacto corporativo */
+    .dcard {
+      width: 256px;
+      flex: none;
+      align-self: center;
+      background: #fff;
+      border: 2px solid var(--fg);
+      border-radius: 22px;
+      padding: 16px 16px 14px;
+      box-shadow: 0 24px 50px -24px rgba(0, 0, 0, .25);
+      transform: rotate(-2.5deg) translateY(-20px);
+      font-size: 10px;
+      color: var(--fg);
+    }
+
+    .dc-eye {
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #666;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .dc-num {
+      font-family: var(--display-font);
+      font-weight: 900;
+      font-size: 40px;
+      line-height: 1;
+      margin: 4px 0 3px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .dc-num small {
+      font-family: var(--body-font);
+      font-size: 10px;
+      font-weight: 800;
+      background: var(--accent);
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+
+    .dc-sub {
+      font-size: 9.5px;
+      color: #666;
+    }
+
+    .dc-lab {
+      font-size: 9px;
+      font-weight: 800;
+      margin: 14px 0 7px;
+      padding-top: 10px;
+      border-top: 1.5px dashed var(--fg);
+    }
+
+    .dc-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 3px 8px;
+      margin-bottom: 8px;
+      font-size: 9.5px;
+      font-weight: 700;
+    }
+
+    .dc-row em {
+      font-style: normal;
+      font-weight: 800;
+    }
+
+    .dc-row i {
+      grid-column: 1 / -1;
+      display: block;
+      height: 8px;
+      border: 1.2px solid var(--fg);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .dc-row i::after {
+      content: '';
+      display: block;
+      height: 100%;
+      width: var(--w);
+      background: var(--accent);
+    }
+
+    .dc-foot {
+      display: flex;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .dc-foot span {
+      flex: 1;
+      border: 1.5px solid var(--fg);
+      border-radius: 8px;
+      padding: 6px 7px;
+      font-size: 8.5px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .dc-foot b {
+      display: block;
+      font-family: var(--display-font);
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    @media (max-width: 600px) {
+      .hero .wrap {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .hero .hero-visual {
+        min-height: 0;
+        padding-top: 0;
+        gap: 16px;
+        animation: none;
+        align-items: flex-start;
+        width: 518px;
+        justify-content: flex-start;
+        transform-origin: 0 0;
+        transform: scale(.66);
+        margin-left: calc(50% - 171px);
+        height: 370px;
+      }
+
+      .phone.p2 {
+        transform: translateY(28px) rotate(2deg);
+      }
+    }
+
+    /* Patrón de wireframe de herramientas gobernadas */
+    .ph {
+      background-color: #fff;
+      background-image:
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white' stroke='%23111' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='3' width='18' height='18' rx='3'/><path d='m9 12 2 2 4-4'/></svg>"),
+        repeating-linear-gradient(45deg, transparent 0 7px, rgba(17, 17, 17, .10) 7px 8px);
+      background-repeat: no-repeat, repeat;
+      background-position: center, 0 0;
+      background-size: 20px 20px, auto;
+      border: 1.5px solid var(--fg);
+    }
+
+    .ph-code {
+      background: #111;
+      color: #f1f1f1;
+      font-family: var(--mono-font);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 8px;
+      line-height: 1.4;
+      margin: 6px 10px 0;
+      border: 1.5px solid var(--fg);
+    }
+
+    .ph-code span.c-acc {
+      color: var(--accent);
+    }
+
+    .pm-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #fff;
+      border: 1.5px solid var(--fg);
+      display: grid;
+      place-items: center;
+      font-family: var(--display-font);
+      font-style: italic;
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    .sm-hdr {
+      height: 52px;
+      margin: 34px 10px 0;
+      border-radius: 10px;
+      position: relative;
+    }
+
+    .sm-hdr span {
+      position: absolute;
+      top: 5px;
+      right: 6px;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--fg);
+      color: #fff;
+      font-size: 7.5px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 999px;
+    }
+
+    .sm-hdr span .ico {
+      width: 9px;
+      height: 9px;
+      stroke-width: 2.2;
+    }
+
+    .sm-title {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: #fff;
+      border: 1.5px solid var(--fg);
+      margin: 8px 10px 0;
+      padding: 7px 8px;
+      border-radius: 10px;
+    }
+
+    .sm-title .pm-avatar {
+      position: static;
+      width: 24px;
+      height: 24px;
+      font-size: 9px;
+    }
+
+    .sm-title b {
+      font-size: 10.5px;
+      display: block;
+      line-height: 1.1;
+    }
+
+    .sm-title span {
+      font-size: 8px;
+      color: #666;
+    }
+
+    .sm-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      margin: 8px 10px 0;
+    }
+
+    .sm-grid div {
+      aspect-ratio: 1;
+      border-radius: 7px;
+      background-size: 15px 15px, auto;
+      position: relative;
+      height: 56px;
+    }
+
+    .sm-grid.two {
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .sm-grid.two div {
+      height: 64px;
+    }
+
+    .sm-grid.two.wide div {
+      height: 52px;
+    }
+
+    .sm-grid div span {
+      position: absolute;
+      left: 4px;
+      bottom: 4px;
+      font-size: 7px;
+      font-weight: 800;
+      background: #fff;
+      border: 1.2px solid var(--fg);
+      border-radius: 999px;
+      padding: 1px 5px;
+    }
+
+    .sm-block {
+      background: #fff;
+      border: 1.5px solid var(--fg);
+      margin: 7px 10px 0;
+      padding: 7px 8px;
+      border-radius: 10px;
+    }
+
+    .sm-block b {
+      font-size: 9.5px;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .sm-block p {
+      font-size: 8px;
+      color: #555;
+      line-height: 1.35;
+    }
+
+    .sm-price {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .sm-price em {
+      font-style: normal;
+      font-family: var(--mono-font);
+      font-weight: 800;
+      font-size: 10px;
+      background: var(--accent);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .sm-btn {
+      margin: 8px 10px 0;
+      padding: 8px;
+      border-radius: 10px;
+      background: var(--fg);
+      color: #fff;
+      font-size: 9.5px;
+      font-weight: 800;
+      text-align: center;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+
+    .sm-btn svg {
+      width: 11px;
+      height: 11px;
+    }
+
+    .sm-link {
+      display: grid;
+      grid-template-columns: 12px 1fr 12px;
+      align-items: center;
+      gap: 7px;
+      margin: 5px 10px 0;
+      padding: 6px 8px;
+      border: 1.5px solid var(--fg);
+      border-radius: 9px;
+      font-size: 8.5px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .sm-link .ico {
+      width: 12px;
+      height: 12px;
+    }
+
+    /* ── Animaciones ── */
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(26px);
+      }
+
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @keyframes floaty {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-9px);
+      }
+    }
+
+    .hero-copy>* {
+      animation: rise .8s cubic-bezier(.2, .7, .2, 1) both;
+    }
+
+    .hero-copy> :nth-child(2) {
+      animation-delay: .08s;
+    }
+
+    .hero-copy> :nth-child(3) {
+      animation-delay: .16s;
+    }
+
+    .hero-copy> :nth-child(4) {
+      animation-delay: .24s;
+    }
+
+    .hero-copy> :nth-child(5) {
+      animation-delay: .32s;
+    }
+
+    .hero-visual {
+      animation: rise 1s cubic-bezier(.2, .7, .2, 1) .25s both;
+    }
+
+    .dcard {
+      animation: floaty 6s ease-in-out 1.2s infinite;
+    }
+
+    .phone.p2 {
+      animation: floaty 7s ease-in-out 1.8s infinite;
+    }
+
+    [data-reveal] {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity .75s cubic-bezier(.2, .7, .2, 1), transform .75s cubic-bezier(.2, .7, .2, 1);
+      transition-delay: calc(var(--d, 0) * 90ms);
+    }
+
+    [data-reveal].in {
+      opacity: 1;
+      transform: none;
+    }
+
+    /* ── Secciones ── */
+    section {
+      padding: clamp(64px, 8vw, 120px) 0;
+    }
+
+    .sec-soft {
+      background: var(--bg);
+    }
+
+    .sec-dark {
+      background: var(--fg);
+      color: #fff;
+    }
+
+    .sec-dark .eyebrow {
+      color: rgba(255, 255, 255, .55);
+    }
+
+    .sec-dark .lead {
+      color: rgba(255, 255, 255, .75);
+    }
+
+    /* Trust list (Gobernanza & Capacidades) */
+    .trust {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .trust-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .trust-item {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+      transition: border-color .15s ease, transform .15s ease;
+    }
+
+    .trust-item:hover {
+      border-color: #111;
+      transform: translateY(-2px);
+    }
+
+    .trust-item .tick {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--fg);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      flex: none;
+    }
+
+    .trust-item .tick .ico {
+      width: 15px;
+      height: 15px;
+      stroke-width: 3;
+    }
+
+    .trust-item b {
+      display: block;
+      font-size: 15.5px;
+      margin-bottom: 2px;
+    }
+
+    .trust-item p {
+      font-size: 14px;
+      color: var(--fg-soft);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 860px) {
+      .trust {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+    }
+
+    /* Ejemplos de Citizen Developers */
+    .examples {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .example {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .example .phone {
+      transform: none;
+    }
+
+    .example-cap {
+      text-align: center;
+      max-width: 290px;
+    }
+
+    .example-cap b {
+      display: block;
+      font-size: 17px;
+      margin-bottom: 5px;
+    }
+
+    .example-cap p {
+      font-size: 14px;
+      color: var(--fg-soft);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 960px) {
+      .examples {
+        grid-template-columns: 1fr;
+        gap: 40px;
+      }
+    }
+
+    /* Sección de Métricas & Hub de IT Ops */
+    .metrics {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .metrics .sec-head {
+      margin-bottom: 24px;
+    }
+
+    .metrics .trust-list {
+      margin-bottom: 18px;
+    }
+
+    .metrics-note {
+      font-size: 14.5px;
+      color: var(--fg-soft);
+      line-height: 1.5;
+    }
+
+    .metrics-note b {
+      color: var(--fg);
+    }
+
+    .metrics-visual {
+      display: flex;
+      justify-content: center;
+    }
+
+    .mcard {
+      width: 100%;
+      max-width: 420px;
+      background: #fff;
+      border: 2px solid var(--fg);
+      border-radius: 22px;
+      padding: 22px 22px 18px;
+      box-shadow: 0 24px 50px -24px rgba(0, 0, 0, .25);
+      transform: rotate(-1.5deg);
+      font-size: 12px;
+      color: var(--fg);
+      transition: transform .2s ease;
+    }
+
+    .mcard:hover {
+      transform: rotate(0deg) scale(1.01);
+    }
+
+    .mcard .dc-eye {
+      font-size: 11px;
+    }
+
+    .mcard .dc-num {
+      font-size: 52px;
+    }
+
+    .mcard .dc-num small {
+      font-size: 12px;
+    }
+
+    .mcard .dc-sub {
+      font-size: 12px;
+    }
+
+    .mc-bars {
+      display: flex;
+      gap: 6px;
+      align-items: flex-end;
+      height: 76px;
+      margin: 16px 0 4px;
+    }
+
+    .mc-bars i {
+      flex: 1;
+      height: var(--h);
+      border: 1.5px solid var(--fg);
+      border-radius: 5px 5px 0 0;
+      background: var(--accent);
+      transition: height .3s ease;
+    }
+
+    .mc-bars i:hover {
+      background: #111;
+    }
+
+    .mc-days {
+      display: flex;
+      gap: 6px;
+      font-size: 9.5px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .mc-days span {
+      flex: 1;
+      text-align: center;
+    }
+
+    .mcard .dc-lab {
+      font-size: 11px;
+      margin-top: 16px;
+    }
+
+    .mcard .dc-row {
+      font-size: 11.5px;
+    }
+
+    .mcard .dc-foot span {
+      font-size: 10px;
+    }
+
+    .mcard .dc-foot b {
+      font-size: 20px;
+    }
+
+    .mc-dims {
+      display: flex;
+      gap: 14px;
+      margin-top: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .mc-dims b {
+      color: var(--fg);
+    }
+
+    @media (max-width: 860px) {
+      .metrics {
+        grid-template-columns: 1fr;
+        gap: 28px;
+      }
+
+      .mcard {
+        transform: none;
+      }
+    }
+
+    /* Cómo funciona: pasos */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      counter-reset: step;
+    }
+
+    .step {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--r-card);
+      padding: 26px;
+      position: relative;
+      transition: border-color .15s ease;
+    }
+
+    .step:hover {
+      border-color: #111;
+    }
+
+    .step::before {
+      counter-increment: step;
+      content: counter(step, decimal-leading-zero);
+      font-family: var(--display-font);
+      font-size: 44px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--fg);
+      display: block;
+      margin-bottom: 18px;
+    }
+
+    .step h3 {
+      margin-bottom: 8px;
+    }
+
+    .step p {
+      font-size: 15px;
+      color: var(--fg-soft);
+      line-height: 1.55;
+    }
+
+    .step .mini {
+      margin-top: 18px;
+      background: var(--bg);
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--fg-soft);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .step .mini .ico {
+      width: 16px;
+      height: 16px;
+    }
+
+    .step .mini.link {
+      justify-content: space-between;
+      font-family: var(--mono-font);
+      font-size: 11.5px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .step .mini.link b {
+      background: var(--fg);
+      color: #fff;
+      padding: 4px 9px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-family: var(--body-font);
+      transition: background .15s ease;
+    }
+
+    .step .mini.link:hover b {
+      background: #333;
+    }
+
+    @media (max-width: 860px) {
+      .steps {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Planes & Enterprise */
+    .plans {
+      display: grid;
+      grid-template-columns: 0.84fr 1.16fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .plan {
+      border-radius: var(--r-card);
+      padding: 30px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .plan.pro {
+      background: var(--fg);
+      color: #fff;
+      border-color: var(--fg);
+    }
+
+    .plan-name {
+      font-family: var(--display-font);
+      font-weight: 800;
+      font-size: 26px;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .plan.pro .plan-name::after {
+      content: 'ENTERPRISE SUITE';
+      font-family: var(--body-font);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      background: #fff;
+      color: var(--fg);
+      padding: 4px 9px;
+      border-radius: 999px;
+    }
+
+    .price {
+      font-family: var(--display-font);
+      font-weight: 800;
+      font-size: 52px;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .price small {
+      display: block;
+      margin-top: 8px;
+      font-family: var(--body-font);
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.4;
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+
+    .plan.pro .price small {
+      color: rgba(255, 255, 255, .6);
+    }
+
+    .plan-for {
+      font-size: 14.5px;
+      color: var(--fg-soft);
+    }
+
+    .plan.pro .plan-for {
+      color: rgba(255, 255, 255, .75);
+    }
+
+    .plan ul {
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .plan li {
+      display: flex;
+      gap: 10px;
+      font-size: 14px;
+      line-height: 1.45;
+      align-items: flex-start;
+    }
+
+    .plan li b {
+      font-weight: 700;
+    }
+
+    .plan li .ico {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+    }
+
+    .plan .plus {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, .55);
+      margin-bottom: -6px;
+    }
+
+    .plan.pro ul {
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 22px;
+    }
+
+    .plan .foot {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .plan.pro .foot {
+      color: rgba(255, 255, 255, .55);
+    }
+
+    @media (max-width: 960px) {
+      .plan.pro ul {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .plan.pro li .ico {
+      color: var(--accent);
+    }
+
+    .plan .btn {
+      margin-top: auto;
+      width: 100%;
+    }
+
+    @media (max-width: 860px) {
+      .plans {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ── CTA Final ── */
+    .cta-final {
+      text-align: center;
+    }
+
+    .cta-final h2 {
+      color: #fff;
+      font-size: clamp(38px, 5.8vw, 70px);
+      margin-bottom: 14px;
+    }
+
+    .cta-final .lead {
+      margin: 0 auto 32px;
+    }
+
+    .cta-final .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* ── Footer ── */
+    footer {
+      padding: 38px 0;
+      border-top: 1px solid var(--line);
+      background: var(--card);
+    }
+
+    footer .wrap {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      font-size: 13.5px;
+      color: var(--muted);
+    }
+
+    footer nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 20px;
+    }
+
+    footer nav a:hover {
+      color: var(--fg);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #111;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 1000;
+      opacity: 0;
+      transform: translateY(12px);
+      transition: all .25s cubic-bezier(.2, .7, .2, 1);
+      pointer-events: none;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── NAVEGACIÓN ──────────────────────────────────────── -->
+  <header class="nav">
+    <div class="wrap">
+      <a class="brand" href="#top" aria-label="Tektonik hub Home">
+        <span class="brand-word notranslate" translate="no">Tektonik hub</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#what" data-i18n="navWhat"></a>
+        <a href="#governance" data-i18n="navGov"></a>
+        <a href="#examples" data-i18n="navExamples"></a>
+        <a href="#metrics" data-i18n="navMetrics"></a>
+        <a href="#how" data-i18n="navHow"></a>
+        <a href="#pricing" data-i18n="navPricing"></a>
+      </nav>
+      <div class="nav-cta">
+        <nav class="lang" aria-label="Idioma">
+          <button type="button" data-set-lang="en">EN</button>
+          <button type="button" data-set-lang="es" aria-current="page">ES</button>
+        </nav>
+        <a class="btn btn-dark btn-sm nav-guest" href="#pricing" data-i18n="navStart"></a>
+        <button class="nav-burger" type="button" aria-label="Menú" aria-expanded="false" aria-controls="nav-menu"
+          onclick="toggleNav()">
+          <svg class="ico bars" viewBox="0 0 24 24">
+            <path d="M4 6h16" />
+            <path d="M4 12h16" />
+            <path d="M4 18h16" />
+          </svg>
+          <svg class="ico x" viewBox="0 0 24 24">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <!-- Menú móvil -->
+    <div class="nav-menu" id="nav-menu" onclick="if (event.target.closest('a')) closeNav();">
+      <a class="sec" href="#what" data-i18n="navWhat"></a>
+      <a class="sec" href="#governance" data-i18n="navGov"></a>
+      <a class="sec" href="#examples" data-i18n="navExamples"></a>
+      <a class="sec" href="#metrics" data-i18n="navMetrics"></a>
+      <a class="sec" href="#how" data-i18n="navHow"></a>
+      <a class="sec" href="#pricing" data-i18n="navPricing"></a>
+      <div class="foot">
+        <a class="login" href="login.html" data-i18n="navLogin"></a>
+        <nav class="lang" aria-label="Idioma">
+          <button type="button" data-set-lang="en">EN</button>
+          <button type="button" data-set-lang="es" aria-current="page">ES</button>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── HERO ────────────────────────────────────────────── -->
+  <section class="hero" id="top">
+    <div class="wrap">
+      <div class="hero-copy">
+        <div class="hero-pill" id="hero-pill">
+          <b data-i18n="heroPillBadge"></b>
+          <span data-i18n="heroPillText"></span>
+        </div>
+        <h1 id="hero-title">
+          <span data-i18n="heroH1Line1"></span><br>
+          <span data-i18n="heroH1Line2"></span><span class="yl"
+            data-i18n="heroH1Highlight"></span>
+        </h1>
+        <p class="lead" id="hero-lead" data-i18n="heroLead"></p>
+        <div class="hero-actions">
+          <a class="btn btn-dark" href="#how">
+            <span data-i18n="heroCta1"></span>
+            <svg class="ico" viewBox="0 0 24 24">
+              <path d="M5 12h14" />
+              <path d="m12 5 7 7-7 7" />
+            </svg>
+          </a>
+          <a class="btn btn-ghost" href="#governance" data-i18n="heroCta2"></a>
+        </div>
+        <div class="hero-note">
+          <span><svg class="ico" viewBox="0 0 24 24">
+              <path d="M20 6 9 17l-5-5" />
+            </svg><span data-i18n="heroNote1"></span></span>
+          <span><svg class="ico" viewBox="0 0 24 24">
+              <path d="M20 6 9 17l-5-5" />
+            </svg><span data-i18n="heroNote2"></span></span>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <!-- Tarjeta flotante de métricas corporativas -->
+        <div class="dcard">
+          <div class="dc-eye">
+            <span data-i18n="dcardEye"></span>
+            <span style="font-family:var(--mono-font);color:var(--muted)">IT VERIFIED</span>
+          </div>
+          <div class="dc-num"><span data-content="blocks.hero-visual.dc-num1"></span> <small><span data-content="blocks.hero-visual.small1"></span></small></div>
+          <div class="dc-sub" data-i18n="dcardSub"></div>
+          <div class="dc-lab" data-i18n="dcardLab"></div>
+          <div class="dc-row"><span data-i18n="dcardSrc1"></span><em><span data-content="blocks.hero-visual.em1"></span></em><i
+              style="--w:100%"></i></div>
+          <div class="dc-row"><span data-i18n="dcardSrc2"></span><em><span data-content="blocks.hero-visual.em2"></span></em><i style="--w:81%"></i>
+          </div>
+          <div class="dc-row"><span data-i18n="dcardSrc3"></span><em><span data-content="blocks.hero-visual.em3"></span></em><i
+              style="--w:66%"></i></div>
+          <div class="dc-foot">
+            <span><b><span data-content="blocks.hero-visual.b1"></span></b><span data-i18n="dcardFoot1"></span></span>
+            <span><b><span data-content="blocks.hero-visual.b2"></span></b><span data-i18n="dcardFoot2"></span></span>
+          </div>
+        </div>
+
+        <!-- Mockup del dispositivo: Espacio corporativo auditado -->
+        <div class="phone p2">
+          <div class="phone-screen">
+            <div class="sm-hdr ph">
+              <span><span data-content="blocks.hero-visual.span1"></span> <svg class="ico" viewBox="0 0 24 24">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg><span data-content="blocks.hero-visual.span2"></span></span>
+            </div>
+            <div class="sm-title">
+              <div class="pm-avatar"><span data-content="blocks.hero-visual.pm-avatar1"></span></div>
+              <div>
+                <b data-i18n="phone1Title"></b>
+                <span data-i18n="phone1Sub"></span>
+              </div>
+            </div>
+            <div class="ph-code">
+              <span class="c-acc"><span data-content="blocks.hero-visual.c-acc1"></span></span> <span data-content="blocks.hero-visual.ph-code1"></span><br>
+              <span style="color:#888"><span data-content="blocks.hero-visual.span3"></span></span><br>
+              <span class="c-acc"><span data-content="blocks.hero-visual.c-acc2"></span></span> <span data-content="blocks.hero-visual.ph-code2"></span>
+            </div>
+            <div class="sm-grid two wide">
+              <div class="ph"><span data-i18n="tagPrompts"></span></div>
+              <div class="ph"><span data-i18n="tagAssets"></span></div>
+              <div class="ph"><span data-i18n="tagSkill"></span></div>
+              <div class="ph"><span data-i18n="tagLive"></span></div>
+            </div>
+            <div class="sm-block sm-price">
+              <b data-i18n="phone1Repo"></b>
+              <em><span data-content="blocks.hero-visual.em4"></span></em>
+            </div>
+            <div class="sm-btn" onclick="copyDemoLink()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span data-i18n="phone1Btn"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── QUÉ CABE EN TU VIBE HUB CORPORATIVO ─────────────── -->
+  <section class="sec-soft" id="what">
+    <div class="wrap">
+      <div class="trust">
+        <div class="sec-head">
+          <span class="eyebrow" data-i18n="whatEyebrow"></span>
+          <h2 data-i18n="whatH2"></h2>
+          <p class="lead" data-i18n="whatLead"></p>
+        </div>
+        <div class="trust-list">
+          <div class="trust-item">
+            <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg></span>
+            <div>
+              <b data-i18n="whatItem1Title"></b>
+              <p data-i18n="whatItem1Desc"></p>
+            </div>
+          </div>
+          <div class="trust-item">
+            <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg></span>
+            <div>
+              <b data-i18n="whatItem2Title"></b>
+              <p data-i18n="whatItem2Desc"></p>
+            </div>
+          </div>
+          <div class="trust-item">
+            <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                <path
+                  d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
+              </svg></span>
+            <div>
+              <b data-i18n="whatItem3Title"></b>
+              <p data-i18n="whatItem3Desc"></p>
+            </div>
+          </div>
+          <div class="trust-item">
+            <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg></span>
+            <div>
+              <b data-i18n="whatItem4Title"></b>
+              <p data-i18n="whatItem4Desc"></p>
+            </div>
+          </div>
+          <div class="trust-item">
+            <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg></span>
+            <div>
+              <b data-i18n="whatItem5Title"></b>
+              <p data-i18n="whatItem5Desc"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── GOBERNANZA IT: DE LA SHADOW AI A LA INNOVACIÓN ──── -->
+  <section id="governance">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow" data-i18n="govEyebrow"></span>
+        <h2 data-i18n="govH2"></h2>
+        <p class="lead" data-i18n="govLead"></p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <h3 data-i18n="govStep1Title"></h3>
+          <p data-i18n="govStep1Desc"></p>
+          <div class="mini">
+            <svg class="ico" viewBox="0 0 24 24">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span data-i18n="govStep1Badge"></span>
+          </div>
+        </div>
+        <div class="step">
+          <h3 data-i18n="govStep2Title"></h3>
+          <p data-i18n="govStep2Desc"></p>
+          <div class="mini">
+            <svg class="ico" viewBox="0 0 24 24">
+              <polyline points="9 11 12 14 22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+            <span data-i18n="govStep2Badge"></span>
+          </div>
+        </div>
+        <div class="step">
+          <h3 data-i18n="govStep3Title"></h3>
+          <p data-i18n="govStep3Desc"></p>
+          <div class="mini link" onclick="copyDemoLink()">
+            <span><span data-content="blocks.governance.span1"></span></span>
+            <b data-i18n="govStep3Copy"></b>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── EJEMPLOS DE CITIZEN DEVELOPERS ──────────────────── -->
+  <section class="sec-soft" id="examples">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow" data-i18n="exEyebrow"></span>
+        <h2 data-i18n="exH2"></h2>
+        <p class="lead" data-i18n="exLead"></p>
+      </div>
+      <div class="examples">
+        <!-- Ejemplo 1: Legal -->
+        <div class="example">
+          <div class="phone pb" aria-hidden="true">
+            <div class="phone-screen">
+              <div class="sm-hdr ph">
+                <span><span data-content="blocks.examples.span1"></span> <svg class="ico" viewBox="0 0 24 24">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg><span data-content="blocks.examples.span2"></span></span>
+              </div>
+              <div class="sm-title">
+                <div class="pm-avatar"><span data-content="blocks.examples.pm-avatar1"></span></div>
+                <div><b data-i18n="ex1Title"></b></div>
+              </div>
+              <div class="sm-block">
+                <b data-i18n="ex1WhoTitle"></b>
+                <p data-i18n="ex1WhoDesc"></p>
+              </div>
+              <div class="sm-link"><svg class="ico" viewBox="0 0 24 24">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg><span data-i18n="ex1LinkRepo"></span></div>
+              <div class="sm-link"><svg class="ico" viewBox="0 0 24 24">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg><span data-i18n="ex1LinkPrompts"></span></div>
+              <div class="sm-link"><svg class="ico" viewBox="0 0 24 24">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg><span data-i18n="ex1LinkZip"></span></div>
+              <div class="sm-grid two wide">
+                <div class="ph"><span data-i18n="tagZero"></span></div>
+                <div class="ph"><span data-i18n="tagISO"></span></div>
+              </div>
+              <div class="sm-btn" data-i18n="ex1Btn"></div>
+            </div>
+          </div>
+          <div class="example-cap">
+            <b data-i18n="ex1CapTitle"></b>
+            <p data-i18n="ex1CapDesc"></p>
+          </div>
+        </div>
+
+        <!-- Ejemplo 2: Operaciones & Finanzas -->
+        <div class="example">
+          <div class="phone pb" aria-hidden="true">
+            <div class="phone-screen">
+              <div class="sm-hdr ph">
+                <span><span data-content="blocks.examples.span3"></span> <svg class="ico" viewBox="0 0 24 24">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg><span data-content="blocks.examples.span4"></span></span>
+              </div>
+              <div class="sm-title">
+                <div class="pm-avatar"><span data-content="blocks.examples.pm-avatar2"></span></div>
+                <div><b data-i18n="ex2Title"></b></div>
+              </div>
+              <div class="sm-grid two wide">
+                <div class="ph"><span data-i18n="ex2Before"></span></div>
+                <div class="ph"><span data-i18n="ex2After"></span></div>
+              </div>
+              <div class="ph-code" style="margin-top:6px">
+                <span class="c-acc"><span data-content="blocks.examples.c-acc1"></span></span> <span data-content="blocks.examples.ph-code1"></span><br>
+                <span style="color:#888"><span data-content="blocks.examples.span5"></span></span>
+              </div>
+              <div class="sm-block">
+                <b data-i18n="ex2IncTitle"></b>
+                <p data-i18n="ex2Inc1"></p>
+                <p data-i18n="ex2Inc2"></p>
+                <p data-i18n="ex2Inc3"></p>
+              </div>
+              <div class="sm-btn" data-i18n="ex2Btn"></div>
+            </div>
+          </div>
+          <div class="example-cap">
+            <b data-i18n="ex2CapTitle"></b>
+            <p data-i18n="ex2CapDesc"></p>
+          </div>
+        </div>
+
+        <!-- Ejemplo 3: Recursos Humanos -->
+        <div class="example">
+          <div class="phone pb" aria-hidden="true">
+            <div class="phone-screen">
+              <div class="sm-hdr ph">
+                <span><span data-content="blocks.examples.span6"></span> <svg class="ico" viewBox="0 0 24 24">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  </svg><span data-content="blocks.examples.span7"></span></span>
+              </div>
+              <div class="sm-title">
+                <div class="pm-avatar"><span data-content="blocks.examples.pm-avatar3"></span></div>
+                <div><b data-i18n="ex3Title"></b></div>
+              </div>
+              <div class="sm-block">
+                <b data-i18n="ex3FamilyTitle"></b>
+                <p data-i18n="ex3FamilyDesc"></p>
+              </div>
+              <div class="sm-grid two wide">
+                <div class="ph"><span data-i18n="tagRAG"></span></div>
+                <div class="ph"><span data-i18n="tagSlack"></span></div>
+              </div>
+              <div class="sm-link"><svg class="ico" viewBox="0 0 24 24">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg><span data-i18n="ex3DemoLink"></span></div>
+              <div class="sm-btn" data-i18n="ex3Btn"></div>
+            </div>
+          </div>
+          <div class="example-cap">
+            <b data-i18n="ex3CapTitle"></b>
+            <p data-i18n="ex3CapDesc"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── IMPACTO, ANALÍTICA & ROI CORPORATIVO ────────────── -->
+  <section id="metrics">
+    <div class="wrap">
+      <div class="metrics">
+        <div>
+          <div class="sec-head">
+            <span class="eyebrow" data-i18n="metEyebrow"></span>
+            <h2 data-i18n="metH2"><br></h2>
+            <p class="lead" data-i18n="metLead"></p>
+          </div>
+          <div class="trust-list">
+            <div class="trust-item">
+              <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg></span>
+              <div>
+                <b data-i18n="metItem1Title"></b>
+                <p data-i18n="metItem1Desc"></p>
+              </div>
+            </div>
+            <div class="trust-item">
+              <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg></span>
+              <div>
+                <b data-i18n="metItem2Title"></b>
+                <p data-i18n="metItem2Desc"></p>
+              </div>
+            </div>
+            <div class="trust-item">
+              <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                  <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+                </svg></span>
+              <div>
+                <b data-i18n="metItem3Title"></b>
+                <p data-i18n="metItem3Desc"></p>
+              </div>
+            </div>
+            <div class="trust-item">
+              <span class="tick"><svg class="ico" viewBox="0 0 24 24">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg></span>
+              <div>
+                <b data-i18n="metItem4Title"></b>
+                <p data-i18n="metItem4Desc"></p>
+              </div>
+            </div>
+          </div>
+          <p class="metrics-note" data-i18n="metNote">
+            <b></b></p>
+        </div>
+
+        <div class="metrics-visual" aria-hidden="true">
+          <div class="mcard">
+            <div class="dc-eye">
+              <span data-i18n="mcardEye"></span>
+              <span style="font-family:var(--mono-font);color:var(--muted)"><span data-content="blocks.metrics-visual.span1"></span></span>
+            </div>
+            <div class="dc-num"><span data-content="blocks.metrics-visual.dc-num1"></span> <small><span data-content="blocks.metrics-visual.small1"></span></small></div>
+            <div class="dc-sub" data-i18n="mcardVisits"></div>
+            <div class="mc-bars">
+              <i style="--h:45%"></i>
+              <i style="--h:62%"></i>
+              <i style="--h:58%"></i>
+              <i style="--h:80%"></i>
+              <i style="--h:100%"></i>
+              <i style="--h:88%"></i>
+              <i style="--h:94%"></i>
+            </div>
+            <div class="mc-days" id="mc-days-labels">
+              <span><span data-content="blocks.metrics-visual.span2"></span></span><span><span data-content="blocks.metrics-visual.span3"></span></span><span><span data-content="blocks.metrics-visual.span4"></span></span><span><span data-content="blocks.metrics-visual.span5"></span></span><span><span data-content="blocks.metrics-visual.span6"></span></span><span><span data-content="blocks.metrics-visual.span7"></span></span><span><span data-content="blocks.metrics-visual.span8"></span></span>
+            </div>
+            <div class="dc-lab" data-i18n="dcardLab"></div>
+            <div class="dc-row"><span data-i18n="dcardSrc1"></span><em><span data-content="blocks.metrics-visual.em1"></span></em><i
+                style="--w:100%"></i></div>
+            <div class="dc-row"><span data-i18n="dcardSrc2"></span><em><span data-content="blocks.metrics-visual.em2"></span></em><i
+                style="--w:85%"></i></div>
+            <div class="dc-row"><span data-i18n="mcardWa"></span><em><span data-content="blocks.metrics-visual.em3"></span></em><i
+                style="--w:62%"></i></div>
+            <div class="dc-foot">
+              <span><b><span data-content="blocks.metrics-visual.b1"></span></b><span data-i18n="dcardFoot1"></span></span>
+              <span><b><span data-content="blocks.metrics-visual.b2"></span></b><span data-i18n="dcardFoot2"></span></span>
+              <span><b><span data-content="blocks.metrics-visual.b3"></span></b><span data-i18n="mcardDl"></span></span>
+            </div>
+            <div class="mc-dims">
+              <span><span data-i18n="dimStack"></span> <b><span data-content="blocks.metrics-visual.b4"></span></b></span>
+              <span><span data-i18n="dimAgent"></span> <b><span data-content="blocks.metrics-visual.b5"></span></b></span>
+              <span><span data-i18n="dimGlobal"></span> <b><span data-content="blocks.metrics-visual.b6"></span></b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CÓMO FUNCIONA EL MODELO CITIZEN DEVELOPER ────────── -->
+  <section class="sec-soft" id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow" data-i18n="howEyebrow"></span>
+        <h2><span class="ln" data-i18n="howH2Line1"></span> <span class="ln"
+            data-i18n="howH2Line2"></span></h2>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <h3 data-i18n="step1Title"></h3>
+          <p data-i18n="step1Desc"></p>
+          <div class="mini">
+            <svg class="ico" viewBox="0 0 24 24">
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+            <span data-i18n="step1Badge"></span>
+          </div>
+        </div>
+        <div class="step">
+          <h3 data-i18n="step2Title"></h3>
+          <p data-i18n="step2Desc"></p>
+          <div class="mini">
+            <svg class="ico" viewBox="0 0 24 24">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span data-i18n="step2Badge"></span>
+          </div>
+        </div>
+        <div class="step">
+          <h3 data-i18n="step3Title"></h3>
+          <p data-i18n="step3Desc"></p>
+          <div class="mini link" onclick="copyDemoLink()">
+            <span><span data-content="blocks.how.span1"></span></span>
+            <b data-i18n="step3Copy"></b>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PLANES EMPRESARIALES ────────────────────────────── -->
+  <section id="pricing">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow" data-i18n="priceEyebrow"></span>
+        <h2><span class="ln" data-i18n="priceH2Line1"></span> <span class="ln"
+            data-i18n="priceH2Line2"></span></h2>
+      </div>
+      <div class="plans">
+        <!-- Plan Business Hub -->
+        <div class="plan">
+          <div class="plan-name" data-i18n="planFreeName"></div>
+          <div class="price"><span data-content="blocks.pricing.price1"></span> <small data-i18n="planFreePeriod"></small>
+          </div>
+          <ul>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planFreeF1"><b></b></span></li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planFreeF2"><b></b></span>
+            </li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planFreeF3"><b></b></span></li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planFreeF4"><b></b></span>
+            </li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planFreeF5"><b></b></span></li>
+          </ul>
+          <p class="foot" data-i18n="planFreeFoot"></p>
+          <a class="btn btn-ghost" href="#top" data-i18n="planFreeCta"></a>
+        </div>
+
+        <!-- Plan Enterprise Suite -->
+        <div class="plan pro">
+          <div class="plan-name"><span data-content="blocks.pricing.plan-name1"></span></div>
+          <div class="price"><span data-content="blocks.pricing.price2"></span> <small data-i18n="planProPeriod"></small></div>
+          <p class="plan-for" data-i18n="planProTrial"></p>
+          <p class="plus" data-i18n="planProPlus"></p>
+          <ul>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planProF1"><b></b></span>
+            </li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planProF2"><b></b></span></li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planProF3"><b></b></span></li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planProF4"><b></b></span></li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planProF5"><b></b></span></li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planProF6"><b></b></span></li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planProF7"><b></b></span>
+            </li>
+            <li><svg class="ico" viewBox="0 0 24 24">
+                <path d="M20 6 9 17l-5-5" />
+              </svg><span data-i18n="planProF8"><b></b></span></li>
+          </ul>
+          <p class="foot" data-i18n="planProFoot"></p>
+          <a class="btn btn-yellow" href="#top" data-i18n="planProCta"></a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FINAL CTA ───────────────────────────────────────── -->
+  <section class="sec-dark cta-final">
+    <div class="wrap">
+      <h2 data-i18n="finalH2"></h2>
+      <p class="lead" data-i18n="finalLead"></p>
+      <div class="actions">
+        <a class="btn btn-yellow" href="#pricing" data-i18n="finalCta1"></a>
+        <a class="btn btn-ghost-light" href="#governance" data-i18n="finalCta2"></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ──────────────────────────────────────────── -->
+  <footer>
+    <div class="wrap">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="brand-word notranslate" translate="no">Tektonik hub</span>
+        <span style="font-size:12px;color:var(--muted)"><span data-content="blocks.page.span1"></span></span>
+      </div>
+      <nav>
+        <a href="#what" data-i18n="navWhat"></a>
+        <a href="#governance" data-i18n="navGov"></a>
+        <a href="#pricing" data-i18n="navPricing"></a>
+      </nav>
+      <span style="font-family:var(--mono-font);font-size:12px"><span data-content="blocks.page.span2"></span></span>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast"><span data-content="blocks.page.toast1"></span></div>
+
+  <script src="assets/js/data-store.js"></script>
+  <script>
+  window.BLK.ready.then(() => {
+    /* ── Diccionario de Idiomas y Textos Corporativos ── */
+    const I18N = window.BLK.content("index").I18N;
+
+    let currentLang = 'es';
+
+    function setLanguage(lang) {
+      if (!I18N[lang]) return;
+      currentLang = lang;
+      document.documentElement.lang = lang;
+      try { localStorage.setItem('blkunit:lang', lang); } catch (e) { }
+
+      document.querySelectorAll('[data-set-lang]').forEach(btn => {
+        if (btn.getAttribute('data-set-lang') === lang) {
+          btn.setAttribute('aria-current', 'page');
+        } else {
+          btn.removeAttribute('aria-current');
+        }
+      });
+
+      const d = I18N[lang];
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (d[key] !== undefined) {
+          el.innerHTML = d[key];
+        }
+      });
+
+      const daysWrap = document.getElementById('mc-days-labels');
+      if (daysWrap && d.daysList) {
+        daysWrap.innerHTML = d.daysList.map(s => `<span>${s}</span>`).join('');
+      }
+
+      if (document.getElementById('meta-title')) document.getElementById('meta-title').innerText = d.metaTitle;
+      if (document.getElementById('meta-desc')) document.getElementById('meta-desc').setAttribute('content', d.metaDesc);
+      if (document.getElementById('og-title')) document.getElementById('og-title').setAttribute('content', d.metaTitle);
+      if (document.getElementById('og-desc')) document.getElementById('og-desc').setAttribute('content', d.metaDesc);
+      renderLanding();
+    }
+
+    // Menú móvil
+    function toggleNav() {
+      const root = document.documentElement;
+      root.classList.toggle('nav-open');
+      const btn = document.querySelector('.nav-burger');
+      if (btn) btn.setAttribute('aria-expanded', root.classList.contains('nav-open'));
+    }
+
+    function closeNav() {
+      document.documentElement.classList.remove('nav-open');
+      const btn = document.querySelector('.nav-burger');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+
+    // Copiar enlace corporativo
+    function copyDemoLink() {
+      const text = new URL('app-catalog.html?app=' + encodeURIComponent(contentValue('demo.appId')), location.href).href;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(I18N[currentLang].toastCopy);
+      }).catch(() => {
+        showToast(text);
+      });
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      if (!t) return;
+      t.innerText = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2400);
+    }
+
+    document.addEventListener('click', function (e) {
+      const btn = e.target.closest('[data-set-lang]');
+      if (btn) {
+        const lang = btn.getAttribute('data-set-lang');
+        setLanguage(lang);
+      }
+    });
+
+    const PAGE = "index";
+
+    function contentValue(path) {
+      return path.split('.').reduce((value, key) => value == null ? undefined : value[key], window.BLK.content(PAGE));
+    }
+    function bindContent() {
+      document.querySelectorAll('[data-content]').forEach(el => {
+        const value = contentValue(el.dataset.content);
+        if (value !== undefined) el.textContent = value;
+      });
+    }
+    function setText(selector, value, root = document) {
+      const el = root.querySelector(selector);
+      if (el) el.textContent = value == null ? '' : value;
+    }
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString(currentLang === 'en' ? 'en-US' : 'es-ES');
+    }
+    function approvedFor(user) {
+      const org = window.BLK.currentOrg();
+      const ids = new Set(window.BLK.apps({orgId: org.id, authorId: user.id, includeUnpublished: true}).map(app => app.id));
+      return window.BLK.catalogApps().filter(app => ids.has(app.id));
+    }
+    function bindIdentity(user = window.BLK.currentUser()) {
+      const org = window.BLK.currentOrg();
+      document.querySelectorAll('[data-org-field]').forEach(el => {
+        el.textContent = org[el.dataset.orgField] == null ? '' : org[el.dataset.orgField];
+      });
+      document.querySelectorAll('[data-user-field]').forEach(el => {
+        el.textContent = user[el.dataset.userField] == null ? '' : user[el.dataset.userField];
+      });
+    }
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-copy-content]');
+      if (button) copyCommand(contentValue(button.dataset.copyContent));
+    });
+    function renderLanding() { bindContent(); }
+
+    // Inicialización
+    (function init() {
+      let lang = 'es';
+      try {
+        const stored = localStorage.getItem('blkunit:lang');
+        if (stored === 'en' || stored === 'es') {
+          lang = stored;
+        } else {
+          const q = new URLSearchParams(window.location.search);
+          if (q.get('lang') === 'en' || q.get('lang') === 'es') {
+            lang = q.get('lang');
+          } else {
+            const pref = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+            if (pref.toLowerCase().startsWith('en')) lang = 'en';
+          }
+        }
+      } catch (e) { }
+
+      setLanguage(lang);
+
+      // Scroll reveal
+      if (!('IntersectionObserver' in window)) return;
+      const heads = document.querySelectorAll('.sec-head, .cta-final .wrap > *');
+      heads.forEach(el => el.setAttribute('data-reveal', ''));
+      const groups = ['.steps', '.trust-list', '.metrics-visual', '.examples', '.plans'];
+      groups.forEach(sel => {
+        document.querySelectorAll(sel).forEach(g => {
+          Array.prototype.forEach.call(g.children, (c, i) => {
+            c.setAttribute('data-reveal', '');
+            c.style.setProperty('--d', Math.min(i, 10));
+          });
+        });
+      });
+
+      const io = new IntersectionObserver(entries => {
+        entries.forEach(e => {
+          if (e.isIntersecting) {
+            e.target.classList.add('in');
+            io.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+
+      document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
+    })();
+  
+    Object.assign(window, { setLanguage, toggleNav, closeNav, copyDemoLink, showToast });
+    Object.defineProperty(window, "I18N", { configurable: true, get: () => I18N });
+    Object.defineProperty(window, "currentLang", { configurable: true, get: () => currentLang });
+    window.BLK.subscribe(() => { renderLanding(); });
+
+  }).catch(window.BLK.showError);
+  </script>
+
+</body>
+
+</html>

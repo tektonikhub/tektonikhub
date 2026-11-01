@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tektonik hub Studio — De idea a herramienta</title>
+  <meta name="description" content="Crea e itera una micro-app con conversación y preview HTML. Tektonik hub: demo local y composición de dashboards con Azure OpenAI.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,700;0,800;1,900&family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/studio.css">
+</head>
+<body>
+  <svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/><path d="m20 2 .5 1.5L22 4l-1.5.5L20 6l-.5-1.5L18 4l1.5-.5Z"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+      <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-14-2 18"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></symbol>
+      <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8v-6"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6v20h12V6Zm0 0v5h5M9 12h6m-6 4h6"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7a9 9 0 1 0 1 8M20 3v5h-5"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></symbol>
+    </defs>
+  </svg>
+  <header class="top-bar">
+    <div class="top-left">
+      <a class="brand-logo" href="index.html" aria-label="Tektonik hub, inicio">TH</a>
+      <span class="brand-name">studio<span style="color:var(--muted)">.</span></span>
+      <span class="top-divider"></span>
+      <div class="project-identity"><svg class="icon"><use href="#i-file"/></svg><span class="project-name" id="projectName">Proyecto sin título</span></div>
+      <span class="badge-admin">CREATOR / MVP</span>
+    </div>
+    <div class="top-right">
+      <span class="saved-state" id="saveState" role="status">Borrador local</span>
+      <a class="btn btn-ghost catalog-link" href="app-catalog.html">Catálogo <svg class="icon"><use href="#i-chevron"/></svg></a>
+      <button class="btn" id="downloadButton" disabled><svg class="icon"><use href="#i-download"/></svg><span>Exportar HTML</span></button>
+      <button class="btn btn-primary" id="reviewButton" disabled><svg class="icon"><use href="#i-shield"/></svg><span>Enviar a IT</span></button>
+      <a class="avatar" href="profile.html" id="userAvatar" aria-label="Mi perfil">ML</a>
+    </div>
+  </header>
+  <nav class="mobile-switch" aria-label="Panel del estudio">
+    <button data-mobile-view="chat" aria-pressed="true">Conversación</button>
+    <button data-mobile-view="preview" aria-pressed="false">Vista previa</button>
+  </nav>
+  <div class="app-body" id="studioBody" data-mobile-view="chat">
+    <aside class="chat-panel" aria-label="Conversación con el agente">
+      <header class="chat-header">
+        <div class="chat-heading"><span class="agent-glyph"><svg class="icon"><use href="#i-spark"/></svg></span><span>Tu compañero de creación<small id="agentModeLabel">Tektonik hub Agent · demo local</small></span></div>
+        <button class="icon-button" id="newProjectButton" title="Nuevo proyecto" aria-label="Nuevo proyecto"><svg class="icon"><use href="#i-plus"/></svg></button>
+      </header>
+      <div class="chat-log" id="chatLog" role="log" aria-label="Historial de conversación" aria-live="polite" aria-relevant="additions">
+        <article class="message">
+          <div class="message-label"><span class="mini-glyph">✦</span> Tektonik hub Agent</div>
+          <p><strong>Tú traes la idea.<br>Yo le doy forma.</strong><br><br>Cuéntame qué necesita tu equipo. Prepararé una herramienta que podrás probar aquí y cambiar conversando, sin empezar de cero.</p>
+          <div class="welcome-note"><svg class="icon"><use href="#i-code"/></svg><span>Elige demo local o Azure para crear dashboards con IA y componentes validados. Usa datos ficticios; no introduzcas información sensible. No ejecutamos código arbitrario del modelo.</span></div>
+        </article>
+      </div>
+      <div class="quick-edits" id="quickEdits" hidden>
+        <button data-prompt="Ponlo en modo oscuro">Modo oscuro</button>
+        <button data-prompt="Cambia el color a violeta">Acento violeta</button>
+        <button data-prompt="Añade un gráfico">Añadir gráfico</button>
+      </div>
+      <div class="composer-area">
+        <div class="studio-mode"><label for="generationMode">Motor</label><select id="generationMode"><option value="demo">Demo local · sin IA</option><option value="azure" id="azureModeOption" disabled>Azure OpenAI · dashboards</option></select><button id="llmRefresh" class="icon-button" type="button" aria-label="Actualizar conexión de Azure" title="Actualizar conexión"><svg class="icon"><use href="#i-refresh"/></svg></button></div>
+        <p id="modeNote" class="mode-note" role="status">Comprobando servidor…</p><a class="llm-settings-link" href="admin.html?settings=llm">Configurar Azure en LLM Settings →</a>
+        <form class="composer" id="promptForm">
+          <label for="promptInput" hidden>Describe tu herramienta o pide un cambio</label>
+          <textarea id="promptInput" maxlength="2000" rows="3" placeholder="Crea un dashboard para mi equipo con métricas y seguimiento de proyectos…" disabled></textarea>
+          <div class="composer-footer">
+            <span class="model-label" id="modelLabel">Motor demo · sin conexión a IA</span>
+            <button class="send-button" id="sendButton" type="submit" disabled aria-label="Generar herramienta" title="Generar herramienta"><svg class="icon"><use href="#i-send"/></svg></button>
+          </div>
+        </form>
+        <div class="composer-hint"><span>↵ Enviar · Shift + ↵ Nueva línea</span><span id="promptCounter">0 / 2000</span></div>
+      </div>
+    </aside>
+    <main class="workspace" aria-label="Motor de generación HTML">
+      <div class="preview-toolbar">
+        <div class="toolbar-group">
+          <div class="tabs" role="tablist" aria-label="Vista del proyecto">
+            <button class="tab" id="previewTab" role="tab" aria-selected="true" aria-controls="previewPanel"><svg class="icon"><use href="#i-eye"/></svg>Preview</button>
+            <button class="tab" id="codeTab" role="tab" aria-selected="false" aria-controls="codePanel" tabindex="-1"><svg class="icon"><use href="#i-code"/></svg>Código</button>
+          </div>
+          <div class="device-controls" aria-label="Tamaño de vista previa">
+            <button class="icon-button" id="desktopButton" aria-pressed="true" aria-label="Vista escritorio" title="Escritorio"><svg class="icon"><use href="#i-monitor"/></svg></button>
+            <button class="icon-button" id="mobileButton" aria-pressed="false" aria-label="Vista móvil" title="Móvil"><svg class="icon"><use href="#i-mobile"/></svg></button>
+          </div>
+        </div>
+        <div class="url-bar"><svg class="icon"><use href="#i-lock"/></svg><span id="previewUrl">preview.local / tu-herramienta</span></div>
+        <div class="toolbar-group">
+          <select id="versionSelect" class="version-select" aria-label="Versión del proyecto" disabled><option>Sin versiones</option></select>
+          <button class="icon-button" id="refreshButton" aria-label="Reiniciar vista previa" title="Reiniciar preview" disabled><svg class="icon"><use href="#i-refresh"/></svg></button>
+          <button class="icon-button" id="copyButton" aria-label="Copiar HTML" title="Copiar HTML" disabled><svg class="icon"><use href="#i-copy"/></svg></button>
+        </div>
+      </div>
+      <div class="preview-stage" id="previewStage">
+        <div class="empty-state" id="emptyState">
+          <div class="hero-mark"><svg class="icon"><use href="#i-spark"/></svg></div>
+          <div class="eyebrow"><span class="status-dot"></span> Un lienzo para tus ideas</div>
+          <h1>Menos imaginar.<br><span>Más hacer.</span></h1>
+          <p class="hero-desc">Convierte ese «estaría bien tener…» en una herramienta para tu equipo. Descríbela. Pruébala. Hazla tuya.</p>
+          <div class="starter-grid">
+            <button class="starter-card" data-prompt="Crea un dashboard de operaciones con métricas del equipo, un gráfico y buscador de proyectos" disabled>
+              <span class="starter-icon"><svg class="icon"><use href="#i-chart"/></svg></span><b>Un dashboard de equipo</b><p>Métricas, proyectos y todo lo importante en un solo lugar.</p><span class="card-bottom">OPERACIONES <svg class="icon"><use href="#i-arrow"/></svg></span>
+            </button>
+            <button class="starter-card" data-prompt="Crea una calculadora de ROI para estimar el ahorro de horas de mi equipo con automatización" disabled>
+              <span class="starter-icon"><svg class="icon"><use href="#i-grid"/></svg></span><b>Una calculadora de ahorro</b><p>Pon números al tiempo que tu equipo puede recuperar.</p><span class="card-bottom">FINANZAS <svg class="icon"><use href="#i-arrow"/></svg></span>
+            </button>
+            <button class="starter-card" data-prompt="Crea un formulario de solicitudes internas con nombre, departamento, prioridad y seguimiento" disabled>
+              <span class="starter-icon"><svg class="icon"><use href="#i-file"/></svg></span><b>Un formulario inteligente</b><p>Menos correos sueltos. Solicitudes con un poco de orden.</p><span class="card-bottom">PERSONAS <svg class="icon"><use href="#i-arrow"/></svg></span>
+            </button>
+          </div>
+          <p class="empty-footnote"><svg class="icon"><use href="#i-shield"/></svg>Preview aislada · Datos ficticios · Tú decides cuándo enviarla</p>
+        </div>
+        <div id="previewPanel" role="tabpanel" aria-labelledby="previewTab" style="width:100%;height:100%;display:flex;justify-content:center" hidden>
+          <iframe class="preview-frame" id="previewFrame" title="Vista previa de la herramienta generada" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+        </div>
+        <div class="code-panel" id="codePanel" role="tabpanel" aria-labelledby="codeTab" hidden><div class="code-filename"><span>◈</span> index.html <span style="float:right;color:#909486" id="codeSize">0 KB</span></div><pre><code id="codeContent">// El HTML de tu herramienta aparecerá aquí.</code></pre></div>
+        <div class="generation-overlay" id="generationOverlay" hidden><span class="loading-glyph"><svg class="icon"><use href="#i-spark"/></svg></span><b id="generationTitle">Dando forma a tu idea…</b><p>Construyendo una versión completa de index.html</p><div class="progress-track"><span id="generationProgress"></span></div><button class="btn" id="stopButton" type="button">Detener generación</button></div>
+      </div>
+      <footer class="workspace-footer"><span id="engineStatus" role="status"><span class="status-dot"></span>Listo para tu primera idea</span><span class="footer-note"><svg class="icon"><use href="#i-code"/></svg>HTML + CSS + JS · Local demo</span></footer>
+    </main>
+  </div>
+  <dialog id="reviewDialog" aria-labelledby="reviewTitle">
+    <div class="dialog-heading"><h2 id="reviewTitle">De tu idea al equipo.</h2><button class="icon-button" id="closeReviewButton" aria-label="Cerrar revisión"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <p class="dialog-desc">Envía esta versión a la cola de revisión de IT. Esto no publica tu herramienta ni crea una PR.</p>
+    <form id="reviewForm">
+      <label class="review-field">Nombre de la herramienta<input id="reviewName" maxlength="60" required></label>
+      <label class="review-field">Qué resuelve<textarea id="reviewDescription" minlength="30" maxlength="800" required></textarea></label>
+      <label class="review-field">Área del equipo<select id="reviewArea" required></select></label>
+      <p class="dialog-desc">Se guarda el HTML generado junto al ticket en la demo local. No incluye conexiones a sistemas corporativos ni revisión de seguridad real.</p>
+      <p class="review-error" id="reviewError" role="alert" hidden></p>
+      <div class="dialog-actions"><button class="btn" type="button" id="cancelReviewButton">Seguir creando</button><button class="btn btn-primary" type="submit">Enviar esta versión</button></div>
+    </form>
+    <div class="review-success" id="reviewSuccess" role="status" hidden></div>
+  </dialog>
+  <dialog id="newProjectDialog" aria-labelledby="newProjectTitle">
+    <div class="dialog-heading"><h2 id="newProjectTitle">Un lienzo nuevo.</h2></div><p class="dialog-desc">Se borrará el borrador y su historial local. Los tickets ya enviados a IT se conservan. Puedes exportar tu HTML antes de continuar.</p>
+    <div class="dialog-actions"><button class="btn" id="cancelNewButton">Cancelar</button><button class="btn btn-dark" id="confirmNewButton">Crear nuevo proyecto</button></div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <noscript>Tektonik hub Studio necesita JavaScript para generar y mostrar la vista previa.</noscript>
+  <script src="assets/js/data-store.js"></script>
+  <script src="assets/js/studio-engine.js"></script>
+  <script src="assets/js/dashboard-kit.js"></script>
+  <script src="assets/js/llm-client.js"></script>
+  <script src="assets/js/studio.js"></script>
+</body>
+</html>
