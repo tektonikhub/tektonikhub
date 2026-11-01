@@ -74,7 +74,7 @@ test('minimal Studio toolbar keeps attachments and verified LLM status without a
 });
 test('LLM status confirms configuration using the exact organization, no-store and cancellation',async()=>{
   const original=globalThis.fetch,controller=new AbortController();
-  const response={available:true,configured:true,endpoint:'https://organization.openai.azure.com',deployment:'organization-model',apiVersion:'2024-10-21',storage:'server-memory'};
+  const response={available:true,configured:true,endpoint:'https://organization.openai.azure.com/openai/v1/responses',deployment:'organization-model',apiVersion:'v1',version:1,storage:'insforge'};
   try{
     globalThis.fetch=async(input,options)=>{
       assert.equal(String(input),'/api/llm/settings?orgId=org%20one');
@@ -86,12 +86,12 @@ test('LLM status confirms configuration using the exact organization, no-store a
     assert.equal((await llm.status('org one',controller.signal)).configured,true);
     globalThis.fetch=async()=>Response.json({...response,configured:false});
     assert.equal((await llm.status('org one')).configured,false);
-    for(const changed of [{configured:'true'},{available:false},{storage:'browser'},{deployment:undefined}]){
+    for(const changed of [{configured:'true'},{available:false},{storage:'browser'},{deployment:undefined},{version:undefined},{version:-1},{apiVersion:'2024-10-21'}]){
       globalThis.fetch=async()=>Response.json({...response,...changed});
       await assert.rejects(llm.status('org one'),/Respuesta de configuración inválida/);
     }
     globalThis.fetch=async()=>Response.json({error:'disabled'},{status:503});
-    await assert.rejects(llm.status('org one',controller.signal,'No se pudo comprobar el LLM de la organización.'),/No se pudo comprobar el LLM de la organización/);
+    await assert.rejects(llm.status('org one',controller.signal,'No se pudo comprobar el LLM de la organización.'),/disabled/);
     globalThis.fetch=async()=>{throw new DOMException('Cancelled','AbortError');};
     await assert.rejects(llm.status('org one',controller.signal),{name:'AbortError'});
   }finally{globalThis.fetch=original;}
@@ -106,7 +106,7 @@ test('organization generation errors create no demo response and preserve the pr
         const url=String(input);calls.push(url);
         if(url==='/api/session')return Response.json({csrf:'a'.repeat(64),localOnly:true});
         if(failure==='offline')throw new Error('Offline');
-        if(failure==='unavailable')return Response.json({error:'disabled'},{status:503});
+        if(failure==='unavailable')return Response.json({error:'El servicio de creación de tu organización no está disponible.'},{status:503});
         if(failure==='invalid')return new Response('<html>Invalid response</html>');
         return Response.json({config:previous,provider:'demo',model:'unexpected'});
       };
@@ -140,4 +140,4 @@ test('submission source is a bounded no-store read tied to the exact ticket vers
   await assert.rejects(loadSubmissionSource(app,async()=>Response.json({error:'Version conflict'},{status:409})),/Version conflict/);
   await assert.rejects(loadSubmissionSource(app,async()=>{throw new Error('Offline');}),/No se confirmó/);
 });
-test('Azure client uses CSRF protocol, validates JSON and never silently falls back',async()=>{const original=globalThis.fetch;const calls:{url:string;options?:RequestInit}[]=[];globalThis.fetch=async(input:RequestInfo|URL,options?:RequestInit)=>{const url=String(input);calls.push({url,options});if(url==='/api/session')return Response.json({csrf:'a'.repeat(64),localOnly:true});if(url==='/api/studio/generate')return Response.json({config:kit.createConfig('ventas'),provider:'azure-openai',model:'demo-deployment'});return Response.json({error:'disabled'},{status:503});};try{const generated=await llm.generate('org','ventas',null,kit,new AbortController().signal);assert.equal(generated.model,'demo-deployment');const call=calls.find(c=>c.url==='/api/studio/generate');assert.equal(new Headers(call?.options?.headers).get('X-BLK-CSRF'),'a'.repeat(64));assert.deepEqual(JSON.parse(String(call?.options?.body)),{prompt:'ventas',previous:null,orgId:'org'});assert.equal(call?.options?.credentials,'same-origin');await assert.rejects(llm.status('org'),/BLK_ENABLE_LOCAL_LLM=true/);const abort=new AbortController();abort.abort();await assert.rejects(llm.generate('org','ventas',null,kit,abort.signal),{name:'AbortError'});}finally{globalThis.fetch=original;}});
+test('Azure client uses authenticated CSRF protocol, preserves server errors and never silently falls back',async()=>{const original=globalThis.fetch;const calls:{url:string;options?:RequestInit}[]=[];globalThis.fetch=async(input:RequestInfo|URL,options?:RequestInit)=>{const url=String(input);calls.push({url,options});if(url==='/api/session')return Response.json({csrf:'a'.repeat(64)});if(url==='/api/studio/generate')return Response.json({config:kit.createConfig('ventas'),provider:'azure-openai',model:'test-deployment'});return Response.json({error:'Falta la clave de cifrado de la organización.'},{status:503});};try{const generated=await llm.generate('org','ventas',null,kit,new AbortController().signal);assert.equal(generated.model,'test-deployment');const call=calls.find(c=>c.url==='/api/studio/generate');assert.equal(new Headers(call?.options?.headers).get('X-BLK-CSRF'),'a'.repeat(64));assert.deepEqual(JSON.parse(String(call?.options?.body)),{prompt:'ventas',previous:null,orgId:'org'});assert.equal(call?.options?.credentials,'same-origin');await assert.rejects(llm.status('org'),/Falta la clave de cifrado/);const abort=new AbortController();abort.abort();await assert.rejects(llm.generate('org','ventas',null,kit,abort.signal),{name:'AbortError'});}finally{globalThis.fetch=original;}});

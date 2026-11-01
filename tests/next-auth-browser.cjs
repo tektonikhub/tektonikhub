@@ -704,7 +704,7 @@ async function main() {
       try {
         const page = await ctx.newPage(); await login(page, 'developer');
         let connection = 'configured', release, notify;
-        const statusResponse = configured => ({ available: true, configured, endpoint: 'https://synthetic.openai.azure.com', deployment: 'synthetic-model', apiVersion: '2024-10-21', storage: 'server-memory' });
+        const statusResponse = configured => ({ available: true, configured, endpoint: 'https://synthetic.openai.azure.com/openai/v1/responses', deployment: 'synthetic-model', apiVersion: 'v1', version: configured ? 1 : 0, storage: 'insforge' });
         await page.route('**/api/llm/settings?**', async route => {
           assert.equal(new URL(route.request().url()).searchParams.get('orgId'), orgId);
           if (connection === 'pending') {
@@ -751,7 +751,7 @@ async function main() {
         assert.equal(await dot.getAttribute('data-state'), 'checking', 'Never retain a stale green light during a refresh');
         connection = 'unavailable'; release();
         await page.waitForFunction(() => document.querySelector('.studio-connection-dot')?.dataset.state === 'unavailable');
-        assert.match(await indicator.getAttribute('aria-label'), /No se pudo comprobar/);
+        assert.equal(await indicator.getAttribute('aria-label'), 'Unavailable');
         connection = 'configured'; await indicator.click();
         await page.waitForFunction(() => document.querySelector('.studio-connection-dot')?.dataset.state === 'configured');
         await page.setViewportSize({ width: 375, height: 812 });

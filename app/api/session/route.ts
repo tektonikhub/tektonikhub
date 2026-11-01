@@ -1,3 +1,3 @@
-import { forwardLocalLLM } from '@/lib/server/local-llm';
+import { organizationAzure } from '@/lib/server/azure';
 export const runtime = 'nodejs';
-export async function GET(request: Request) { return forwardLocalLLM(request, '/api/session'); }
+export async function GET(request: Request) { return organizationAzure(request, '/api/session'); }
