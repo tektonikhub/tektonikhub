@@ -125,6 +125,12 @@ const backend = http.createServer(async (request, response) => {
       assert.equal(body.text.format.type, 'json_object'); assert.equal(body.store, false);
       assert.equal(body.messages, undefined); assert.equal(body.api_version, undefined);
       assert.equal(typeof body.model, 'string'); assert.ok(body.max_output_tokens >= 256);
+      if (!/json/i.test(JSON.stringify(body.input))) {
+        return send(response, 400, { error: {
+          message: "'input' must contain the word 'json' in some form, to use 'text.format' of type 'json_object'.",
+          type: 'invalid_request_error', param: 'input', code: null,
+        } });
+      }
       if (mode === 'block') {
         response.on('close', () => { if (!response.writableEnded) cancelled = true; });
         return;
@@ -132,13 +138,22 @@ const backend = http.createServer(async (request, response) => {
       if (mode === 'unauthorized') return send(response, 401, { error: { message: fakeKey } });
       if (mode === 'quota') return send(response, 429, { error: { message: fakeKey } });
       if (mode === 'upstream') return send(response, 500, { error: { message: fakeKey } });
+      if (mode === 'bad-input') return send(response, 400, { error: { param: 'input', message: fakeKey } });
+      if (mode === 'bad-model') return send(response, 400, { error: { param: 'model', message: fakeKey } });
+      if (mode === 'unsupported-json') return send(response, 400, { error: { code: 'unsupported_value', param: 'text.format.type', message: fakeKey } });
+      if (mode === 'unsupported-responses') return send(response, 400, { error: { code: 'OperationNotSupported', message: fakeKey } });
+      if (mode === 'missing-deployment') return send(response, 404, { error: { code: 'DeploymentNotFound', message: fakeKey } });
+      if (mode === 'unknown-error') return send(response, 400, { error: { code: fakeKey, param: fakeKey, message: fakeKey } });
+      if (mode === 'error-not-json') { response.writeHead(400, { 'Content-Type': 'text/html' }); response.end(fakeKey); return; }
+      if (mode === 'error-too-large') return send(response, 400, { error: { message: fakeKey }, padding: 'x'.repeat(17000) });
       if (mode === 'not-json') { response.writeHead(200, { 'Content-Type': 'text/html' }); response.end('<html>Not JSON</html>'); return; }
       if (mode === 'too-large') return send(response, 200, { padding: 'x'.repeat(250000) });
       if (mode === 'incomplete') return send(response, 200, { ...completed({}), status: 'incomplete' });
       if (mode === 'refusal') return send(response, 200, { status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'No' }] }] });
       if (mode === 'invalid-json') return send(response, 200, { status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'not JSON' }] }] });
-      if (body.input === 'Return {"ok":true}.') return send(response, 200, completed({ ok: true }));
+      if (body.input === 'Return only the JSON object {"ok":true}.') return send(response, 200, completed({ ok: true }));
       const input = JSON.parse(body.input);
+      assert.equal(input.outputFormat, 'JSON');
       assert.ok(body.instructions.includes('"schema"'));
       return send(response, 200, completed(mode === 'invalid-config' ? { script: 'alert(1)' } : kit.createConfig(input.request, input.previous)));
     }
@@ -263,7 +278,10 @@ async function main() {
       await page.getByText(/Azure configurado para esta organización\./).waitFor();
       assert.equal(await page.getByLabel('Endpoint HTTPS').inputValue(), endpoint);
       assert.equal(await page.getByLabel('API key', { exact: true }).inputValue(), '');
+      const connection = page.waitForResponse(response => new URL(response.url()).pathname === '/api/llm/test' && response.request().method() === 'POST');
       await page.getByRole('button', { name: 'Probar conexión (consume cuota)', exact: true }).click();
+      const connectionResponse = await connection;
+      assert.equal(connectionResponse.status(), 200, await connectionResponse.text());
       await page.getByText(/Conexión y JSON verificados con Azure Responses v1/).waitFor();
     } finally { await context.close(); }
     response = await get('/api/llm/settings?orgId=' + orgId, 'developer');
@@ -317,14 +335,21 @@ async function main() {
     assert.equal(settings.get(orgId).lease, null, 'Cancellation must release the durable lease');
     mode = 'valid';
     assert.equal((await post('/api/llm/test', { orgId })).status, 200);
-    for (const [nextMode, status] of [
+    for (const [nextMode, status, expectedError] of [
       ['unauthorized', 502], ['quota', 429], ['upstream', 502], ['not-json', 502], ['too-large', 502],
       ['incomplete', 422], ['refusal', 422], ['invalid-json', 422], ['invalid-config', 422],
+      ['bad-input', 502, /JSON explícitamente/], ['bad-model', 502, /nombre exacto del deployment/],
+      ['unsupported-json', 502, /formato JSON/], ['unsupported-responses', 502, /no admite esta operación/],
+      ['missing-deployment', 502, /nombre exacto de un deployment/], ['unknown-error', 502, /HTTP 400/],
+      ['error-not-json', 502, /HTTP 400/], ['error-too-large', 502, /HTTP 400/],
     ]) {
       settings.get(orgId).calls = 0; mode = nextMode;
+      const callsBefore = azureCalls;
       response = await post('/api/studio/generate', { orgId, prompt: 'ventas' }, 'developer');
       assert.equal(response.status, status, nextMode);
       const body = await response.json();
+      if (expectedError) assert.match(body.error, expectedError);
+      assert.equal(azureCalls, callsBefore + 1, 'Rejected requests must not be retried or silently downgrade JSON mode');
       assert.equal(body.config, undefined); assert.ok(!JSON.stringify(body).includes(fakeKey)); assert.equal(settings.get(orgId).lease, null);
     }
     mode = 'valid'; settings.get(orgId).calls = 0;

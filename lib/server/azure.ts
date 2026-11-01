@@ -6,7 +6,7 @@ import { record } from '@/lib/studio/draft';
 import type { LLMStatus } from '@/lib/studio/llm';
 import type { DashboardConfig } from '@/lib/studio/types';
 import { authenticatedContext } from './auth';
-import { azureClearSchema, azureGenerationSchema, azureOrganizationSchema, azureSaveSchema, azureTestSchema, normalizeAzureEndpoint } from './azure-policy';
+import { azureClearSchema, azureGenerationSchema, azureOrganizationSchema, azureRequestError, azureSaveSchema, azureTestSchema, normalizeAzureEndpoint } from './azure-policy';
 import { databaseError, errorResponse, HttpError, jsonResponse, readJson, sameOrigin } from './http';
 import { limitedJSONText } from './local-llm-policy';
 
@@ -149,15 +149,23 @@ async function callAzure(request: Request, settings: Credentials, apiKey: string
       headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
       body: JSON.stringify({
         model: settings.deployment, instructions,
-        input: isTest ? 'Return {"ok":true}.' : JSON.stringify({ request: prompt, previous }),
+        input: isTest ? 'Return only the JSON object {"ok":true}.' : JSON.stringify({ request: prompt, previous, outputFormat: 'JSON' }),
         text: { format: { type: 'json_object' } }, max_output_tokens: isTest ? 2048 : 8000, store: false,
       }),
     });
     if (!response.ok) {
-      await response.body?.cancel();
-      if ([401, 403].includes(response.status)) throw new HttpError(502, 'Azure rechazó las credenciales o los permisos del recurso.');
-      if (response.status === 429) throw new HttpError(429, 'Azure ha alcanzado su cuota. Inténtalo más tarde.');
-      throw new HttpError(502, `Azure rechazó la solicitud (HTTP ${response.status}). Revisa el endpoint, el modelo desplegado y su compatibilidad con Responses y JSON.`);
+      if ([401, 403, 429].includes(response.status)) {
+        await response.body?.cancel();
+        if (response.status === 429) throw new HttpError(429, 'Azure ha alcanzado su cuota. Inténtalo más tarde.');
+        throw new HttpError(502, 'Azure rechazó las credenciales o los permisos del recurso.');
+      }
+      let details: unknown;
+      try { details = JSON.parse(await limitedJSONText(response.body, 16_384)); }
+      catch (error) {
+        if (signal.aborted) throw new HttpError(504, 'Petición cancelada o tiempo de espera de Azure agotado.');
+        console.warn('Azure error response could not be read', { status: response.status, name: error instanceof Error ? error.name : 'UnknownError' });
+      }
+      throw new HttpError(502, azureRequestError(response.status, details));
     }
     if (!/^application\/json(?:;|$)/i.test(response.headers.get('content-type') || '')) {
       await response.body?.cancel();
