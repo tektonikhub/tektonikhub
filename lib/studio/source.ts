@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import type { App } from '@/lib/domain/types';
 import { requestJson } from '@/lib/data/http-client';
+import { htmlSourceSchema } from './limits';
 
 const sourceSchema = z.object({
-  appId: z.uuid(), version: z.number().int().positive(), generatedHtml: z.string().max(300000).nullable(),
+  appId: z.uuid(), version: z.number().int().positive(), generatedHtml: htmlSourceSchema.nullable(),
 }).strict();
 
 export async function loadSubmissionSource(app: Pick<App, 'id' | 'version'>, fetcher: typeof fetch = globalThis.fetch): Promise<string | null> {

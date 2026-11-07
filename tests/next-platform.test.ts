@@ -24,6 +24,17 @@ test('Next has no HTML aliases, archived rewrites or deprecated UI links', () =>
   assert.doesNotMatch(script, /copyFileSync[^\n]*(?:legacy|Old|\.html)/);
   assert.match(script, /'lib', 'studio', 'runtime'/);
 });
+test('Production source preserves both Studio generation and portable upload routes and regressions', () => {
+  const upload = readFileSync(join('app', '(platform)', 'studio', 'upload', 'page.tsx'), 'utf8');
+  assert.match(upload, /requireAccount\(studioRoles, '\/studio\/upload'\)/);
+  assert.match(upload, /PortableWorkspace/);
+  assert.match(readFileSync(join('components', 'studio', 'studio-workspace.tsx'), 'utf8'), /href="\/studio\/upload"/);
+  assert.match(readFileSync(join('app', 'api', 'studio', 'generate', 'route.ts'), 'utf8'), /maxDuration = 300/);
+  const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts;
+  for (const file of ['next-studio-generation.test.ts', 'next-studio-stream.test.ts', 'next-portable.test.ts', 'next-portable-persistence.test.ts']) {
+    assert.ok(scripts['test:next'].includes(file), `${file} must remain in the combined regression suite`);
+  }
+});
 test('Public preparation needs no dataset and removes stale public demo data', t => {
   const root = mkdtempSync(join(tmpdir(), 'blk-public-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

@@ -82,7 +82,7 @@ test('Approved application HTML is loaded on demand with credentials, no cache a
     { appId: app.id, version: 3, generatedHtml: null },
     { appId: app.id, version: 3, generatedHtml: '' },
     { appId: app.id, version: 3, generatedHtml: 42 },
-    { appId: app.id, version: 3, generatedHtml: 'x'.repeat(300001) },
+    { appId: app.id, version: 3, generatedHtml: 'x'.repeat(2000001) },
     { appId: app.id, version: 3 },
   ]) await assert.rejects(loadApplicationSource(app, async () => Response.json(source)));
   for (const status of [401, 403, 404, 409, 503]) {
@@ -101,7 +101,7 @@ test('Catalog and Mi Flow access share the Studio sandbox without the conversati
   const view = readFileSync(resolve('components', 'features', 'application-view.tsx'), 'utf8');
   assert.match(view, /approvedCatalogApps\(data, org\)/);
   assert.match(view, /isolatedHTML\(html\)/);
-  assert.match(view, /sandbox="allow-scripts"/);
+  assert.match(view, /sandbox="allow-scripts allow-downloads"/);
   assert.match(view, /referrerPolicy="no-referrer"/);
   assert.doesNotMatch(view, /allow-same-origin|dangerouslySetInnerHTML|localStorage|useStudio|StudioWorkspace|loadEngines/);
   const route = readFileSync(resolve('app', 'api', 'apps', 'source', 'route.ts'), 'utf8');

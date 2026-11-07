@@ -11,6 +11,7 @@ const access: Record<string, readonly Role[]> = {
   '/mi-flow': ['developer', 'catalog', 'admin', 'superadmin'],
   '/company': ['developer', 'catalog', 'admin', 'superadmin'],
   '/studio': studioRoles,
+  '/studio/upload': studioRoles,
   '/admin': ['admin', 'superadmin'],
   '/super-admin': ['superadmin'],
 };
