@@ -67,4 +67,5 @@ export const azureGenerationSchema = z.object({
   orgId: azureOrganizationSchema,
   prompt: z.string().trim().min(1).max(2000),
   previous: z.unknown().optional(),
+  allowDataChanges: z.boolean().optional(),
 }).strict();

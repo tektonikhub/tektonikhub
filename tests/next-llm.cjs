@@ -154,8 +154,22 @@ const backend = http.createServer(async (request, response) => {
       if (body.input === 'Return only the JSON object {"ok":true}.') return send(response, 200, completed({ ok: true }));
       const input = JSON.parse(body.input);
       assert.equal(input.outputFormat, 'JSON');
+      if (mode === 'invalid-config') return send(response, 200, completed({ script: 'alert(1)' }));
+      if (input.mode) {
+        assert.match(body.instructions, /BEFORE implementation/);
+        const sample = kit.createConfig(input.request);
+        return send(response, 200, completed({
+          summary: 'Aplicación comercial con exploración y seguimiento.', audience: 'Equipo comercial', scope: input.mode === 'iteration' ? 'focused' : 'full',
+          workflows: ['Explorar registros y revisar tendencias'],
+          features: sample.components.map(component => ({ type: component.type, title: component.title, purpose: 'Revisar el rendimiento' })),
+          design: { accent: '#60A5FA', dark: false }, assumptions: ['Datos sintéticos'],
+          acceptanceCriteria: ['Los filtros actualizan las vistas'], limitations: ['Sin CRM externo'],
+        }));
+      }
       assert.ok(body.instructions.includes('"schema"'));
-      return send(response, 200, completed(mode === 'invalid-config' ? { script: 'alert(1)' } : kit.createConfig(input.request, input.previous)));
+      assert.equal(body.max_output_tokens, 16000);
+      assert.ok(input.expandedBrief.features.length >= 6);
+      return send(response, 200, completed(kit.createConfig(input.request, input.previous)));
     }
     throw new Error(`Unexpected synthetic endpoint ${request.method} ${url.pathname}`);
   } catch (error) {

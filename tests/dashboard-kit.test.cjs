@@ -214,3 +214,131 @@ test('browser runtime filters all views, sorts/pages tables, renders SVG and wor
     }
   } finally { await browser.close(); }
 });
+
+function richConfig() {
+  const value = config();
+  value.components.push(...['board', 'insights', 'form'].map(type => ({ id: type, type, title: type })));
+  return value;
+}
+
+test('rich declarative types retain v1 defaults, safety, original rows and budgets', () => {
+  const value = richConfig(), original = copy(value), normalized = kit.validate(value);
+  assert.deepEqual(value, original);
+  for (const type of ['board', 'form', 'insights']) {
+    assert.ok(kit.schema.properties.components.items.properties.type.enum.includes(type));
+    assert.equal(normalized.components.find(c => c.type === type).span, 12);
+    assert.ok(kit.registry[type].description);
+    const unsafe = copy(value); unsafe.components.find(c => c.type === type).onSubmit = 'alert(1)';
+    assert.throws(() => kit.validate(unsafe), /unsafe property/);
+  }
+  const context = kit.context('add a board, form and insights', config());
+  for (const type of ['board', 'form', 'insights']) assert.ok(context.components[type]);
+  value.components.find(c => c.type === 'board').title = '<img src=x onerror=alert(1)>';
+  const html = kit.renderHTML(value);
+  assert.match(html, /href="#heading-board"/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(html, /<img|<link|<iframe|\sonclick=/i);
+  assert.match(html, /Synthetic session editor/);
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  assert.doesNotThrow(() => new vm.Script(script));
+  assert.doesNotMatch(script, /\b(?:fetch|XMLHttpRequest|eval|localStorage|sessionStorage)\b|\.innerHTML\s*=/);
+  value.components = Array.from({ length: 16 }, (_, i) => ({ id: 'rich' + i, type: ['board', 'form', 'insights'][i % 3], title: 'x'.repeat(100), content: 'x'.repeat(1000) }));
+  value.data = Array.from({ length: 200 }, (_, i) => ({ date: '2026-01-01', category: 'x'.repeat(100), label: 'x'.repeat(160), value: i, status: 'x'.repeat(40) }));
+  assert.ok(Buffer.byteLength(kit.renderHTML(value)) < 200000);
+});
+
+test('rich browser views compute facts and CRUD stays in synchronized synthetic memory', { skip: !chromium }, async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+    const errors = [], requests = []; page.on('pageerror', error => errors.push(error.message)); page.on('request', request => requests.push(request.url()));
+    const value = richConfig();
+    value.data = [
+      { date: '2026-01-01', category: 'Alpha', label: 'One', value: -10, status: 'Ready' },
+      { date: '2026-01-02', category: 'Beta', label: 'Two', value: 30, status: 'Done' }
+    ];
+    value.components.push({ id: 'form2', type: 'form', title: 'Second editor' }, { id: 'filters2', type: 'filters', title: 'Second filters' });
+    const original = kit.validate(value);
+    await page.setContent(kit.renderHTML(value));
+    assert.equal(await page.locator('.board-lane').count(), 2);
+    assert.equal(await page.locator('.record-card').count(), 2);
+    assert.deepEqual(await page.locator('.insight-grid dd').allTextContents(), ['2', '20', '10', '-10 – 30', '2026-01-01 – 2026-01-02']);
+    const form = page.locator('[data-record-form="form"]'), message = form.locator('.form-message');
+    await form.locator('button[type="submit"]').click();
+    assert.match(await message.textContent(), /required/);
+    const fill = async row => { for (const [field, v] of Object.entries(row)) await form.locator('[data-record-field="' + field + '"]').fill(String(v)); };
+    const injection = '<img src=x onerror=alert(1)>&';
+    await fill({ date: '2026-01-03', category: 'New category', label: injection, value: -2.5, status: 'New status' });
+    await form.locator('[data-record-field="status"]').evaluate(input => { input.value = 'x'.repeat(41); });
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /maximum/);
+    await form.locator('[data-record-field="status"]').fill('New status');
+    await form.locator('[data-record-field="date"]').fill('');
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /required/);
+    await form.locator('[data-record-field="date"]').evaluate(input => { input.type = 'text'; input.value = '2026-02-30'; });
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /calendar date/);
+    await form.locator('[data-record-field="date"]').evaluate(input => { input.type = 'date'; });
+    await form.locator('[data-record-field="date"]').fill('2026-01-03');
+    await form.locator('[data-record-field="value"]').fill('1e309');
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /finite|required/);
+    await form.locator('[data-record-field="value"]').fill('-2.5');
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /added/);
+    assert.equal(await page.locator('.record-card').count(), 3);
+    assert.equal(await page.locator('.record-card h4').filter({ hasText: injection }).textContent(), injection);
+    assert.equal(await page.locator('img').count(), 0);
+    assert.equal(await page.locator('[data-component-id="records"] [data-metric-value]').textContent(), '3');
+    assert.equal(await page.locator('[data-component-id="total"] [data-metric-value]').textContent(), '17.5');
+    assert.equal(await page.locator('[data-record-select="form2"] option').count(), 4);
+    await page.locator('#dashboard-filters [data-filter="category"]').selectOption('New category');
+    assert.equal(await page.locator('.record-card').count(), 1);
+    assert.equal(await page.locator('.insight-grid dd').first().textContent(), '1');
+    assert.equal(await page.locator('[data-component-id="filters2"] [data-filter="category"]').inputValue(), 'New category');
+    await form.locator('[data-record-select]').selectOption('2');
+    await fill({ label: 'Edited record', value: 12, category: 'Updated category', status: 'Updated status' });
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /updated/);
+    assert.equal(await page.locator('#dashboard-filters [data-filter="category"]').inputValue(), '');
+    assert.ok((await page.locator('#dashboard-filters [data-filter="category"] option').allTextContents()).includes('Updated category'));
+    assert.ok(!(await page.locator('#dashboard-filters [data-filter="status"] option').allTextContents()).includes('New status'));
+    await page.locator('[data-record-select="form2"]').selectOption('2');
+    assert.equal(await page.locator('[data-component-id="form2"] [data-record-field="label"]').inputValue(), 'Edited record');
+    await form.locator('[data-record-select]').selectOption('2'); await form.locator('[data-record-delete]').click();
+    assert.match(await message.textContent(), /deleted/);
+    assert.equal(await page.locator('.record-card').count(), 2);
+    assert.equal(await page.locator('[data-component-id="form2"] [data-record-delete]').isDisabled(), true);
+    assert.deepEqual(await page.locator('#blk-dashboard-config').evaluate(node => JSON.parse(node.textContent)), original);
+    await page.locator('#dashboard-filters [data-filter="search"]').fill('no match');
+    assert.match(await page.locator('[data-component-id="board"]').textContent(), /No records/);
+    assert.match(await page.locator('[data-component-id="insights"]').textContent(), /No records/);
+    assert.equal(await form.locator('[data-record-select] option').count(), 1);
+    await page.locator('#dashboard-filters button').click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    await page.locator('.section-nav a[href="#heading-board"]').click();
+    assert.equal(await page.evaluate(() => location.hash), '#heading-board');
+    await page.setContent(kit.renderHTML(value)); assert.equal(await page.locator('.record-card').count(), 2);
+    const full = richConfig(); full.data = Array.from({ length: 200 }, () => copy(value.data[0]));
+    await page.setContent(kit.renderHTML(full));
+    await fill({ date: '2026-01-03', category: 'C', label: 'New', value: 1, status: 'S' });
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /200 records/);
+    await form.locator('[data-record-select]').selectOption('0'); await fill({ value: 5 });
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /updated/);
+    assert.equal(await page.locator('[data-component-id="records"] [data-metric-value]').textContent(), '200');
+    const budget = richConfig();
+    budget.data = Array.from({ length: 199 }, () => ({ date: '2026-01-01', category: 'x'.repeat(100), label: 'x'.repeat(160), value: 1, status: 'x'.repeat(40) }));
+    let padding = Math.floor((119900 - Buffer.byteLength(JSON.stringify(kit.validate(budget)))) / 2);
+    for (const row of budget.data) { const n = Math.min(160, padding); row.label = '界'.repeat(n) + 'x'.repeat(160 - n); padding -= n; }
+    assert.ok(Buffer.byteLength(JSON.stringify(kit.validate(budget))) >= 119898);
+    await page.setContent(kit.renderHTML(budget));
+    await fill({ date: '2026-01-03', category: '界'.repeat(100), label: '界'.repeat(160), value: 1, status: '界'.repeat(40) });
+    await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /120KB/);
+    assert.equal(await page.locator('[data-component-id="records"] [data-metric-value]').textContent(), '199');
+    assert.deepEqual(await page.locator('#blk-dashboard-config').evaluate(node => JSON.parse(node.textContent)), kit.validate(budget));
+    const empty = richConfig(); empty.data = [];
+    await page.setContent(kit.renderHTML(empty));
+    assert.match(await page.locator('[data-component-id="board"]').textContent(), /No records/);
+    await fill({ date: '2026-01-03', category: 'C', label: 'First record', value: 0, status: 'Ready' });
+    await form.locator('button[type="submit"]').click();
+    assert.equal(await page.locator('.record-card').count(), 1);
+    assert.equal(await page.locator('.insight-grid dd').nth(1).textContent(), '0');
+    assert.deepEqual(errors, []); assert.deepEqual(requests, []);
+  } finally { await browser.close(); }
+});
