@@ -15,6 +15,10 @@ const systemOrgId = '00000000-0000-4000-8000-000000000003';
 const planId = '00000000-0000-4000-8000-000000000004';
 const fakeKey = 'synthetic-azure-not-a-real-key';
 const fakeOtherKey = 'synthetic-other-organization-key';
+const adoptionPrompt = 'crea un diagrama de fases detallando La adopción de la inteligencia artificial en una compañía Primera fase tiene que tener Lo fundamentales La segunda tiene que Cumplir la creación de un primer agente La ter Tiene que explicar el concepto de cowork Donde la IA ejecuta y no sólo asiste Para cada una de las 3 fases Tiene que haber más checklist Aspectos que el usuario tiene que tener en cuenta y que quiere que poder ir marcando Las 3 grandes fases tienes que estar bien delimitadas A modo de workflow';
+const phaseTitles = ['Fundamentos de IA', 'Creación del primer agente', 'Cowork: la IA ejecuta con supervisión'];
+const workflowConfig = kit.validate({ ...kit.createConfig('ventas'), title: 'Adopción de inteligencia artificial', data: [], components: [{ id: 'adoption', type: 'workflow', title: 'Workflow de adopción', span: 12, phases: phaseTitles.map((title, index) => ({ id: 'phase' + index, title, description: 'Objetivo y criterios de salida de esta fase.', items: ['Definir objetivos y responsable', 'Revisar privacidad y permisos', 'Validar resultados antes de avanzar'].map((label, item) => ({ id: `check${index}_${item}`, label, checked: false, detail: 'Revisión supervisada por la compañía.' })) })) }] });
+const workflowBrief = { scope: 'focused', audience: 'Equipo de adopción de IA', summary: 'Tres fases conectadas con checklists para adoptar IA.', workflows: phaseTitles, features: [{ type: 'workflow', title: 'Workflow de adopción', purpose: 'Checklist independiente por fase y progreso.', phaseTitles }], design: { accent: '#60A5FA', dark: false }, assumptions: ['Checklist de práctica en memoria.'], limitations: ['Sin persistencia ni conexión a la red.'], acceptanceCriteria: ['Tres fases con títulos exactos y checklists interactivos.'] };
 const roles = ['admin', 'developer', 'catalog', 'superadmin', 'otheradmin'];
 const accounts = roles.map((role, index) => ({
   role: role === 'otheradmin' ? 'admin' : role, enabled: true, verified: true,
@@ -157,6 +161,7 @@ const backend = http.createServer(async (request, response) => {
       if (mode === 'invalid-config') return send(response, 200, completed({ script: 'alert(1)' }));
       if (input.mode) {
         assert.match(body.instructions, /BEFORE implementation/);
+        if (mode === 'workflow') { assert.equal(input.request, adoptionPrompt); return send(response, 200, completed(workflowBrief)); }
         const sample = kit.createConfig(input.request);
         return send(response, 200, completed({
           summary: 'Aplicación comercial con exploración y seguimiento.', audience: 'Equipo comercial', scope: input.mode === 'iteration' ? 'focused' : 'full',
@@ -168,8 +173,10 @@ const backend = http.createServer(async (request, response) => {
       }
       assert.ok(body.instructions.includes('"schema"'));
       assert.equal(body.max_output_tokens, 16000);
-      assert.ok(input.expandedBrief.features.length >= 6);
-      return send(response, 200, completed(kit.createConfig(input.request, input.previous)));
+      if (mode === 'workflow') assert.deepEqual(input.expandedBrief.features[0].phaseTitles, phaseTitles);
+      else assert.ok(input.expandedBrief.features.length >= 6);
+      if (mode === 'delayed-compose') await wait(65_000);
+      return send(response, 200, completed(mode === 'workflow' ? workflowConfig : kit.createConfig(input.request, input.previous)));
     }
     throw new Error(`Unexpected synthetic endpoint ${request.method} ${url.pathname}`);
   } catch (error) {
@@ -313,6 +320,28 @@ async function main() {
     assert.equal(iteration.config.theme.dark, true); assert.deepEqual(iteration.config.data, generated.config.data);
     assert.equal((await post('/api/studio/generate', { orgId, prompt: 'ventas', previous: { script: 'evil' } }, 'developer')).status, 400);
     console.log('PASS: Admin UI saves encrypted credentials to InsForge, reloads metadata without keys and users generate validated Azure Responses JSON');
+    mode = 'workflow'; settings.get(orgId).calls = 0;
+    const studioContext = await browser.newContext();
+    try {
+      await studioContext.addCookies([{ name: 'insforge_access_token', value: sessions.developer.token, url: base, sameSite: 'Lax' }]);
+      await studioContext.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+      const page = await studioContext.newPage();
+      await page.goto(base + '/studio');
+      await page.getByLabel('Describe tu primera idea').fill(adoptionPrompt);
+      await page.getByRole('button', { name: 'Generar herramienta', exact: true }).click();
+      await page.getByRole('button', { name: 'Abrir v1', exact: true }).waitFor();
+      const preview = page.frameLocator('#previewFrame');
+      for (const title of phaseTitles) await preview.getByRole('heading', { name: title, exact: true }).waitFor();
+      const checks = preview.getByRole('checkbox');
+      assert.equal(await checks.count(), 9);
+      await checks.first().check();
+      assert.equal(await checks.first().isChecked(), true);
+      assert.equal(await checks.nth(3).isChecked(), false);
+      assert.ok((await page.locator('#chatLog').innerText()).includes(adoptionPrompt));
+      assert.doesNotMatch(await page.locator('#chatLog').innerText(), /No se creó ninguna versión/);
+    } finally { await studioContext.close(); }
+    mode = 'valid';
+    console.log('PASS: exact Spanish adoption prompt flows through the real Studio client, NDJSON API, validated three-phase workflow and interactive sandbox checklists');
     await restart({ BLK_ENABLE_LOCAL_LLM: 'true' });
     response = await get('/api/llm/settings?orgId=' + orgId, 'admin');
     assert.equal((await response.json()).version, 1);
@@ -335,6 +364,33 @@ async function main() {
     settings.set(otherOrgId, otherSettings);
     console.log('PASS: credentials survive production restarts, blank-key updates re-encrypt, stale writes fail and tenant-bound ciphertext cannot be reused');
     settings.get(orgId).calls = 0;
+    mode = 'delayed-compose';
+    const longStarted = Date.now(), longCalls = azureCalls;
+    response = await post('/api/studio/generate', { orgId, prompt: 'ventas' }, 'developer', { headers: { Accept: 'application/x-ndjson' } });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /application\/x-ndjson/);
+    const longReader = response.body.getReader(), decoder = new TextDecoder();
+    let longText = '';
+    const firstEvent = await longReader.read();
+    longText += decoder.decode(firstEvent.value);
+    assert.ok(Date.now() - longStarted < 15_000, 'Progress must reach the client before Azure completes');
+    assert.match(longText, /"type":"progress"/);
+    assert.ok(settings.get(orgId).lease);
+    assert.equal((await post('/api/llm/test', { orgId })).status, 429, 'Lease must remain active while composing');
+    while (true) { const chunk = await longReader.read(); if (chunk.done) break; longText += decoder.decode(chunk.value, { stream: true }); }
+    longText += decoder.decode();
+    const longEvents = longText.trim().split('\n').map(line => JSON.parse(line));
+    assert.ok(Date.now() - longStarted >= 65_000);
+    assert.ok(longEvents.some(event => event.type === 'heartbeat' && event.elapsedMs >= 60_000));
+    assert.deepEqual(longEvents.filter(event => event.type === 'progress').map(event => event.stage), ['expand', 'compose', 'validate']);
+    assert.equal(longEvents.filter(event => event.type === 'result').length, 1);
+    assert.equal(longEvents.some(event => event.type === 'error'), false);
+    assert.equal(kit.validate(longEvents.find(event => event.type === 'result').result.config).template, 'sales');
+    assert.equal(azureCalls, longCalls + 2);
+    assert.equal(settings.get(orgId).lease, null);
+    assert.ok(!longText.includes(fakeKey));
+    console.log('PASS: production generation completes after 65 seconds, streams timely progress and heartbeats, holds the durable lease and returns one validated result');
+    settings.get(orgId).calls = 0;
     mode = 'block'; cancelled = false;
     const before = azureCalls, abort = new AbortController();
     const pending = post('/api/studio/generate', { orgId, prompt: 'ventas' }, 'developer', { signal: abort.signal });
@@ -347,6 +403,18 @@ async function main() {
     for (let attempt = 0; attempt < 80 && (!cancelled || settings.get(orgId).lease); attempt++) await wait(100);
     assert.equal(cancelled, true, 'Client cancellation must reach Azure');
     assert.equal(settings.get(orgId).lease, null, 'Cancellation must release the durable lease');
+    cancelled = false;
+    const streamAbort = new AbortController(), streamCalls = azureCalls;
+    response = await post('/api/studio/generate', { orgId, prompt: 'ventas' }, 'developer', { signal: streamAbort.signal, headers: { Accept: 'application/x-ndjson' } });
+    const cancelledReader = response.body.getReader();
+    await cancelledReader.read();
+    for (let attempt = 0; attempt < 50 && azureCalls === streamCalls; attempt++) await wait(100);
+    assert.equal(azureCalls, streamCalls + 1);
+    streamAbort.abort();
+    await assert.rejects(cancelledReader.read());
+    for (let attempt = 0; attempt < 80 && (!cancelled || settings.get(orgId).lease); attempt++) await wait(100);
+    assert.equal(cancelled, true, 'Cancelling the stream must cancel the Azure fetch');
+    assert.equal(settings.get(orgId).lease, null, 'Cancelling the stream must release its lease');
     mode = 'valid';
     assert.equal((await post('/api/llm/test', { orgId })).status, 200);
     for (const [nextMode, status, expectedError] of [
@@ -365,6 +433,14 @@ async function main() {
       if (expectedError) assert.match(body.error, expectedError);
       assert.equal(azureCalls, callsBefore + 1, 'Rejected requests must not be retried or silently downgrade JSON mode');
       assert.equal(body.config, undefined); assert.ok(!JSON.stringify(body).includes(fakeKey)); assert.equal(settings.get(orgId).lease, null);
+      if (['incomplete', 'bad-input'].includes(nextMode)) {
+        response = await post('/api/studio/generate', { orgId, prompt: 'ventas' }, 'developer', { headers: { Accept: 'application/x-ndjson' } });
+        assert.equal(response.status, 200);
+        const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
+        assert.equal(events.at(-1).type, 'error'); assert.equal(events.at(-1).status, status);
+        assert.equal(events.some(event => event.type === 'result'), false);
+        assert.ok(!JSON.stringify(events).includes(fakeKey)); assert.equal(settings.get(orgId).lease, null);
+      }
     }
     mode = 'valid'; settings.get(orgId).calls = 0;
     const quotaStart = azureCalls;

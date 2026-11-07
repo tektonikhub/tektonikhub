@@ -1,4 +1,5 @@
 import { record } from './draft';
+import { GENERATION_STREAM_TYPE, readGenerationStream, type GenerationProgress } from './generation-stream';
 import type { DashboardConfig, DashboardKit } from './types';
 export interface LLMStatus { available: boolean; configured: boolean; endpoint: string; deployment: string; apiVersion: string; version: number; storage: 'insforge' }
 export interface LLMFields { endpoint: string; deployment: string; apiKey: string; version: number }
@@ -6,10 +7,11 @@ const SETTINGS_HELP = 'No se pudo comprobar la configuración Azure de tu organi
 const GENERATION_HELP = 'El servicio de creación de tu organización no está disponible. Contacta con IT para habilitarlo; no se generará una versión de ejemplo.';
 class RequestError extends Error { constructor(message:string, readonly status:number){ super(message); } }
 let session: Promise<string> | undefined;
-async function request(url:string, options:RequestInit={},unavailableMessage=SETTINGS_HELP):Promise<unknown>{
+async function request(url:string, options:RequestInit={},unavailableMessage=SETTINGS_HELP,onProgress?:(progress:GenerationProgress)=>void):Promise<unknown>{
   let response:Response;
   try{response=await fetch(url,{...options,credentials:'same-origin',cache:'no-store'});}catch(error){if(error instanceof Error&&error.name==='AbortError')throw error;throw new Error(unavailableMessage);}
-  let result:unknown;try{result=await response.json();}catch{throw new Error('El servicio no devolvió JSON válido. '+unavailableMessage);}
+  if(response.ok&&response.headers.get('content-type')?.split(';')[0]===GENERATION_STREAM_TYPE)return readGenerationStream(response,options.signal||undefined,onProgress);
+  let result:unknown;try{result=await response.json();}catch(error){if(options.signal?.aborted)throw new DOMException('Detenido','AbortError');if(error instanceof Error&&error.name==='AbortError')throw error;throw new Error('El servicio no devolvió JSON válido. '+unavailableMessage);}
   if(!response.ok)throw new RequestError(record(result)&&typeof result.error==='string'?result.error:unavailableMessage,response.status);
   return result;
 }
@@ -26,12 +28,12 @@ export function abortableResponse<T>(pending:Promise<T>,signal?:AbortSignal):Pro
     signal.addEventListener('abort',abort,{once:true});
   });
 }
-async function post(url:string,orgId:string,fields:Record<string,unknown>,signal?:AbortSignal,retry=true,unavailableMessage=SETTINGS_HELP):Promise<unknown>{
+async function post(url:string,orgId:string,fields:Record<string,unknown>,signal?:AbortSignal,retry=true,unavailableMessage=SETTINGS_HELP,onProgress?:(progress:GenerationProgress)=>void):Promise<unknown>{
   if(signal?.aborted)throw new DOMException('Detenido','AbortError');
   const token=await abortableResponse(csrf(unavailableMessage),signal);
   if(signal?.aborted)throw new DOMException('Detenido','AbortError');
-  try{return await request(url,{method:'POST',signal,headers:{'Content-Type':'application/json','X-BLK-CSRF':token},body:JSON.stringify({...fields,orgId})},unavailableMessage);}
-  catch(error){if(retry&&error instanceof RequestError&&error.status===403){session=undefined;return post(url,orgId,fields,signal,false,unavailableMessage);}throw error;}
+  try{return await request(url,{method:'POST',signal,headers:{'Content-Type':'application/json','X-BLK-CSRF':token,...(url==='/api/studio/generate'?{Accept:GENERATION_STREAM_TYPE}:{})},body:JSON.stringify({...fields,orgId})},unavailableMessage,onProgress);}
+  catch(error){if(retry&&error instanceof RequestError&&error.status===403){session=undefined;return post(url,orgId,fields,signal,false,unavailableMessage,onProgress);}throw error;}
 }
 function status(result:unknown):LLMStatus{
   if(!record(result)||typeof result.configured!=='boolean'||result.available!==true||typeof result.endpoint!=='string'||typeof result.deployment!=='string'||result.apiVersion!=='v1'||typeof result.version!=='number'||!Number.isSafeInteger(result.version)||result.version<0||result.storage!=='insforge')throw new Error('Respuesta de configuración inválida.');
@@ -52,9 +54,9 @@ export const llm={
   async save(orgId:string,fields:LLMFields,signal?:AbortSignal){return status(await post('/api/llm/settings',orgId,{...fields},signal));},
   async clear(orgId:string,version:number,signal?:AbortSignal){return status(await post('/api/llm/clear',orgId,{version},signal));},
   async test(orgId:string,signal?:AbortSignal){const result=await post('/api/llm/test',orgId,{},signal);if(!record(result)||result.ok!==true)throw new Error('No se verificó la conexión Azure.');return typeof result.message==='string'?result.message:'Conexión JSON verificada con Azure.';},
-  async generate(orgId:string,prompt:string,previous:DashboardConfig|null,kit:Pick<DashboardKit,'validate'|'context'>,signal:AbortSignal,allowDataChanges=false){
+  async generate(orgId:string,prompt:string,previous:DashboardConfig|null,kit:Pick<DashboardKit,'validate'|'context'>,signal:AbortSignal,allowDataChanges=false,onProgress?:(progress:GenerationProgress)=>void){
     kit.context(prompt,previous);
-    const result=await post('/api/studio/generate',orgId,{prompt,previous,...(allowDataChanges?{allowDataChanges:true}:{})},signal,true,GENERATION_HELP);
+    const result=await post('/api/studio/generate',orgId,{prompt,previous,...(allowDataChanges?{allowDataChanges:true}:{})},signal,true,GENERATION_HELP,onProgress);
     if(!record(result)||result.provider!=='azure-openai'||typeof result.model!=='string'||result.model.length>128)throw new Error('Respuesta de generación inválida.');
     const brief=result.brief;
     if(brief!==undefined&&(!record(brief)||typeof brief.summary!=='string'||brief.summary.length>500||!Array.isArray(brief.features)||brief.features.length>16||brief.features.some(title=>typeof title!=='string'||title.length>100)||!Array.isArray(brief.limitations)||brief.limitations.length>5||brief.limitations.some(text=>typeof text!=='string'||text.length>200)||!Array.isArray(brief.assumptions)||brief.assumptions.length>5||brief.assumptions.some(text=>typeof text!=='string'||text.length>200)))throw new Error('Resumen de generación inválido.');

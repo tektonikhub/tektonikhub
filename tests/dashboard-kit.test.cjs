@@ -156,6 +156,35 @@ test('UMD installs only the kit API in a browser context', () => {
   assert.equal(typeof window.BLKDashboardKit.renderHTML, 'function');
 });
 
+const adoptionFixture = {
+  request: 'Quiero un workflow de adopción de IA en tres fases: fundamentos, primer agente y cowork donde la IA ejecuta. Cada fase debe estar claramente delimitada y contener varios elementos de checklist que pueda marcar de forma independiente.',
+  config: {
+    version: 1, title: 'Adopción de IA', description: 'Plan educativo sintético de tres fases con pasos independientes.',
+    theme: { dark: false, accent: '#60A5FA' }, template: 'projects',
+    data: [{ date: '2026-01-01', category: 'Aprendizaje', label: 'Registro sintético', value: 1, status: 'Planned' }],
+    components: [
+      { id: 'adoption', type: 'workflow', title: 'De los fundamentos al cowork', phases: [
+        { id: 'fundamentals', title: 'Fundamentos', description: 'Comprender las capacidades y los límites de la IA antes de delegar.', items: [
+          { id: 'limits', label: 'Explicar capacidades y límites', detail: 'Comparar un resultado correcto con uno que necesita verificación.' },
+          { id: 'prompt', label: 'Practicar una instrucción con contexto', checked: false, detail: 'Definir objetivo, restricciones y criterios de aceptación.' }
+        ] },
+        { id: 'first-agent', title: 'Primer agente', description: 'Crear y probar un agente acotado con supervisión humana.', items: [
+          { id: 'scope', label: 'Definir el objetivo del agente', checked: true },
+          { id: 'test-agent', label: 'Probar el agente y revisar su resultado', detail: 'Usar datos sintéticos y documentar un caso fallido.' }
+        ] },
+        { id: 'cowork', title: 'Cowork: la IA ejecuta', description: 'Delegar la ejecución con permisos y puntos de revisión explícitos.', items: [
+          { id: 'permissions', label: 'Delimitar permisos y aprobaciones', detail: 'Decidir qué acciones requieren revisión humana.' },
+          { id: 'execute', label: 'Dejar que la IA ejecute y verificar la entrega', checked: false }
+        ] }
+      ] },
+      { id: 'filters', type: 'filters', title: 'Filtros' },
+      { id: 'table', type: 'table', title: 'Registros sintéticos' },
+      { id: 'form', type: 'form', title: 'Editor sintético' }
+    ]
+  }
+};
+const workflowConfig = () => copy(adoptionFixture.config);
+
 let chromium;
 try { chromium = require('playwright').chromium; } catch (_) {}
 test('browser runtime filters all views, sorts/pages tables, renders SVG and works on mobile', { skip: !chromium }, async () => {
@@ -212,6 +241,143 @@ test('browser runtime filters all views, sorts/pages tables, renders SVG and wor
       assert.equal(await chartPage.locator('svg title').first().textContent(), 'By category');
       await chartPage.close();
     }
+  } finally { await browser.close(); }
+});
+
+test('workflow schema and catalog document authored phases, not shared status data', () => {
+  const value = workflowConfig(), original = copy(value), normalized = kit.validate(value);
+  assert.deepEqual(value, original);
+  assert.equal(normalized.components[0].span, 12);
+  assert.equal(normalized.components[0].phases[0].items[0].checked, false);
+  assert.equal(normalized.components[0].phases[1].items[0].checked, true);
+  const context = kit.context(adoptionFixture.request, config());
+  assert.ok(context.components.workflow); assert.ok(context.components.board);
+  assert.match(context.components.workflow.description, /1\.\.6/);
+  assert.match(context.components.workflow.description, /1\.\.12/);
+  assert.match(context.components.board.description, /Shared data/);
+  assert.ok(context.guidance.some(line => /Workflow is different/.test(line)));
+  const componentSchema = kit.schema.properties.components.items;
+  assert.deepEqual(componentSchema.then.required, ['phases']);
+  assert.deepEqual(componentSchema.else.not.required, ['phases']);
+  const phases = componentSchema.properties.phases;
+  assert.equal(phases.minItems, 1); assert.equal(phases.maxItems, 6);
+  assert.equal(phases.items.additionalProperties, false);
+  assert.equal(phases.items.properties.items.items.additionalProperties, false);
+  assert.equal(phases.items.properties.items.items.properties.checked.default, false);
+  assert.deepEqual(kit.validate(normalized), normalized);
+  assert.equal(kit.createConfig(adoptionFixture.request).components.some(c => c.type === 'workflow'), false);
+});
+
+test('workflow strict validation rejects unsafe nested values, duplicates and bounds', () => {
+  const mutations = [
+    c => { delete c.phases; }, c => { c.phases = []; }, c => { c.phases = Array(7).fill(c.phases[0]); },
+    c => { c.phases[0].items = []; }, c => { c.phases[0].items = Array(13).fill(c.phases[0].items[0]); },
+    c => { c.phases[0].items = new Array(1); }, c => { c.phases = new Array(1); },
+    c => { delete c.phases[0].description; }, c => { delete c.phases[0].id; }, c => { delete c.phases[0].title; },
+    c => { delete c.phases[0].items; }, c => { delete c.phases[0].items[0].label; }, c => { delete c.phases[0].items[0].id; },
+    c => { c.phases[0].title = 'x'.repeat(101); }, c => { c.phases[0].description = 'x'.repeat(501); },
+    c => { c.phases[0].items[0].label = 'x'.repeat(301); }, c => { c.phases[0].items[0].detail = 'x'.repeat(501); },
+    ...[null, 0, 'false', undefined].map(checked => c => { c.phases[0].items[0].checked = checked; }),
+    c => { c.phases[0].items[0].detail = undefined; }, c => { c.phases[0].description = null; },
+    c => { c.phases[0].id = 'x'.repeat(41); }, c => { c.phases[0].items[0].id = 'bad:id'; },
+    c => { c.phases[0].id = '" onload=alert(1)'; }, c => { c.phases[0].items[0].id = ''; },
+    c => { c.phases[1].id = c.phases[0].id; },
+    c => { c.phases[1].items[0].id = c.phases[0].items[0].id; },
+    c => { c.phases[0].items[0].id = c.phases[2].id; },
+    c => { c.phases[0].html = '<script>'; }, c => { c.phases[0].items[0].url = 'https://example.com'; },
+    c => { c.phases[0].items[0].onclick = 'alert(1)'; },
+    c => { Object.defineProperty(c.phases[0], 'title', { get() { throw Error('executed getter'); } }); },
+    c => { Object.defineProperty(c.phases[0].items, 0, { get() { throw Error('executed getter'); } }); },
+    c => { Object.defineProperty(c.phases[0].items[0], '__proto__', { value: {}, enumerable: true }); },
+    c => { c.phases[0].items[0] = Object.create({ label: 'inherited' }); },
+    c => { c.phases.extra = 'unsafe'; }
+  ];
+  for (const mutate of mutations) { const value = workflowConfig(); mutate(value.components[0]); assert.throws(() => kit.validate(value)); }
+  for (const type of ['metric', 'table', 'chart', 'filters', 'text', 'board', 'form', 'insights']) {
+    const value = workflowConfig(); value.components[0].type = type;
+    assert.throws(() => kit.validate(value), /only allowed for workflow/);
+  }
+  const maximum = workflowConfig();
+  maximum.components[0].phases = Array.from({ length: 6 }, (_, p) => ({ id: 'phase' + p, title: 'x'.repeat(100), description: 'x'.repeat(500),
+    items: Array.from({ length: 12 }, (_, i) => ({ id: 'item' + p + '_' + i, label: 'x'.repeat(300), detail: 'x'.repeat(500), checked: false })) }));
+  assert.equal(kit.validate(maximum).components[0].phases.length, 6);
+  assert.ok(Buffer.byteLength(kit.renderHTML(maximum)) < 200000);
+  maximum.components[0].phases.forEach(phase => phase.items.forEach(item => { item.detail = '界'.repeat(500); }));
+  assert.throws(() => kit.validate(maximum), /120KB/);
+  const minimum = workflowConfig(); minimum.components[0].phases = [{ id: 'overall', title: '', description: '', items: [{ id: 'single', label: '' }] }];
+  assert.equal(kit.validate(minimum).components[0].phases[0].items[0].checked, false);
+  const repeated = workflowConfig(); repeated.components.push({ ...copy(repeated.components[0]), id: 'second' });
+  assert.doesNotThrow(() => kit.validate(repeated));
+});
+
+test('Chromium renders Spanish AI adoption phases with independent memory-only checklists', async () => {
+  assert.ok(chromium, 'Playwright Chromium must be available for the workflow functional test');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+    const errors = [], requests = []; page.on('pageerror', e => errors.push(e.message)); page.on('request', r => requests.push(r.url()));
+    const value = workflowConfig(), original = copy(value), html = kit.renderHTML(value);
+    const preview = page.locator('#workflow-preview');
+    await page.setContent('<iframe id="workflow-preview" sandbox="allow-scripts allow-forms" title="Isolated workflow preview"></iframe>');
+    await preview.evaluate((iframe, source) => { iframe.srcdoc = source; }, html);
+    const frame = page.frameLocator('#workflow-preview'), workflow = frame.locator('[data-component-id="adoption"]');
+    await workflow.locator('[data-workflow-item="limits"]').waitFor();
+    assert.equal(await workflow.evaluate(() => { try { return !!parent.document; } catch (error) { return error.name; } }), 'SecurityError');
+    assert.ok(await workflow.locator('.workflow-phase').first().evaluate(n => parseFloat(getComputedStyle(n).borderLeftWidth) >= 4));
+    assert.equal(await workflow.locator('.workflow-phase').nth(1).evaluate(n => getComputedStyle(n, '::before').content), '"↓"');
+    assert.deepEqual(await workflow.locator('.workflow-phase h3').allTextContents(), ['Fundamentos', 'Primer agente', 'Cowork: la IA ejecuta']);
+    assert.equal(await workflow.locator('[data-workflow-phase]').count(), 3);
+    assert.equal(await workflow.locator('input[type="checkbox"]').count(), 6);
+    assert.equal(await workflow.locator('.workflow-purpose').count(), 3);
+    assert.equal(await workflow.locator('.workflow-detail').count(), 4);
+    const item = id => workflow.locator('[data-workflow-item="' + id + '"]');
+    const count = key => workflow.locator('[data-workflow-count="' + key + '"]');
+    assert.match(await count('overall').textContent(), /^1 \/ 6 completed · 17%$/);
+    await item('limits').check();
+    assert.match(await count('phase:fundamentals').textContent(), /^1 \/ 2 completed · 50%$/);
+    assert.match(await count('overall').textContent(), /^2 \/ 6 completed · 33%$/);
+    assert.equal(await item('prompt').isChecked(), false); assert.equal(await item('permissions').isChecked(), false);
+    assert.equal(await workflow.locator('[data-workflow-progress="overall"]').evaluate(p => p.value), 2);
+    await item('limits').uncheck(); assert.match(await count('overall').textContent(), /^1 \/ 6/);
+    await item('limits').focus(); await item('limits').press('Space');
+    assert.equal(await item('limits').isChecked(), true); assert.equal(await item('limits').evaluate(n => n === document.activeElement), true);
+    await item('execute').check(); assert.match(await count('phase:cowork').textContent(), /^1 \/ 2/);
+    await frame.locator('#dashboard-filters [data-filter="search"]').fill('no records');
+    assert.equal(await workflow.locator('input[type="checkbox"]').count(), 6);
+    assert.equal(await item('limits').isChecked(), true); assert.equal(await item('execute').isChecked(), true);
+    await frame.locator('#dashboard-filters button').click();
+    await frame.locator('[data-component-id="table"] [data-sort="label"]').click();
+    const form = frame.locator('[data-record-form="form"]');
+    await form.locator('[data-record-select]').selectOption('0');
+    await form.locator('[data-record-field="label"]').fill('Registro editado');
+    await form.locator('button[type="submit"]').click();
+    assert.match(await form.locator('.form-message').textContent(), /updated/);
+    assert.equal(await item('limits').isChecked(), true); assert.equal(await item('execute').isChecked(), true);
+    assert.match(await count('overall').textContent(), /^3 \/ 6 completed · 50%$/);
+    for (const id of ['prompt', 'test-agent', 'permissions']) await item(id).check();
+    assert.match(await count('overall').textContent(), /^6 \/ 6 completed · 100%$/);
+    assert.deepEqual(await workflow.locator('[data-workflow-phase] progress').evaluateAll(ps => ps.map(p => p.value)), [2, 2, 2]);
+    await item('execute').uncheck(); assert.match(await count('overall').textContent(), /^5 \/ 6/);
+    assert.deepEqual(await frame.locator('#blk-dashboard-config').evaluate(n => JSON.parse(n.textContent)), kit.validate(original));
+    assert.deepEqual(value, original);
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.ok(await workflow.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await preview.evaluate((iframe, source) => { iframe.srcdoc = source; }, html);
+    await item('limits').waitFor();
+    assert.equal(await item('limits').isChecked(), false); assert.equal(await item('execute').isChecked(), false);
+    assert.equal(await item('scope').isChecked(), true); assert.match(await count('overall').textContent(), /^1 \/ 6/);
+    assert.equal(await frame.locator('[data-component-id="table"] tbody').textContent().then(t => t.includes('Registro editado')), false);
+    const injection = '</script><img src=x onerror=alert(1)>';
+    const escaped = workflowConfig(); escaped.components[0].phases[0].items[0].label = injection;
+    escaped.components[0].phases[0].items[0].detail = injection;
+    escaped.components.push({ ...copy(escaped.components[0]), id: 'another-workflow' });
+    await preview.evaluate((iframe, source) => { iframe.srcdoc = source; }, kit.renderHTML(escaped));
+    await item('limits').waitFor(); assert.equal(await workflow.locator('.workflow-label').first().textContent(), injection);
+    await item('limits').check();
+    assert.equal(await frame.locator('[data-component-id="another-workflow"] [data-workflow-item="limits"]').isChecked(), false);
+    assert.ok(await workflow.evaluate(() => { const ids = [...document.querySelectorAll('[id]')].map(n => n.id); return new Set(ids).size === ids.length; }));
+    assert.equal(await frame.locator('img').count(), 0);
+    assert.deepEqual(errors, []); assert.deepEqual(requests, []);
   } finally { await browser.close(); }
 });
 
