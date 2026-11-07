@@ -208,7 +208,7 @@ const runtime = String.raw`
       getOwnPropertyDescriptor(target, key) { return entries.has(key) ? {value: entries.get(key), writable: true, enumerable: true, configurable: true} : undefined; }
     });
   }
-  for (const name of ['localStorage', 'sessionStorage']) Object.defineProperty(window, name, {value: storage(), configurable: false});
+  if (!window.TektonikState) for (const name of ['localStorage', 'sessionStorage']) Object.defineProperty(window, name, {value: storage(), configurable: false});
   Object.defineProperty(window, 'TektonikFiles', {value: Object.freeze({
     list: () => files.map(file => file.name),
     read: name => { const file = data.get(String(name).toLowerCase()); if (!file) throw error(); return JSON.parse(file.content); },

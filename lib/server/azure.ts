@@ -5,7 +5,9 @@ import dashboardKit from '@/lib/studio/runtime/dashboard-kit.js';
 import { record } from '@/lib/studio/draft';
 import type { LLMStatus } from '@/lib/studio/llm';
 import type { DashboardConfig } from '@/lib/studio/types';
-import { generateStudioApplication, STUDIO_GENERATION_TIMEOUT, type StudioCompletion } from '@/lib/studio/generation';
+import { STUDIO_GENERATION_TIMEOUT, type StudioCompletion } from '@/lib/studio/generation';
+import { generateHTMLApplication, type PreviousStudioApplication } from '@/lib/studio/html-generation';
+import { validateGeneratedHTML } from '@/lib/studio/html-validation';
 import { generationStream, GENERATION_STREAM_TYPE, type GenerationStage } from '@/lib/studio/generation-stream';
 import { authenticatedContext } from './auth';
 import { azureClearSchema, azureGenerationSchema, azureOrganizationSchema, azureRequestError, azureSaveSchema, azureTestSchema, normalizeAzureEndpoint } from './azure-policy';
@@ -175,7 +177,7 @@ async function callAzure(settings: Credentials, apiKey: string, completion: Pick
       throw new HttpError(502, 'Azure no devolvió una respuesta JSON válida.');
     }
     let body: unknown;
-    try { body = JSON.parse(await limitedJSONText(response.body)); }
+    try { body = JSON.parse(await limitedJSONText(response.body, 2_600_000)); }
     catch {
       if (signal.aborted) throw abortedAzure(signal);
       throw new HttpError(502, 'Azure no devolvió JSON válido dentro del límite permitido.');
@@ -188,7 +190,7 @@ async function callAzure(settings: Credentials, apiKey: string, completion: Pick
     throw new HttpError(502, 'No se pudo conectar con Azure. Revisa la conexión y la configuración del recurso.');
   }
 }
-async function generate(request: Request, context: Context, orgId: string, prompt: string | null, previous: DashboardConfig | null, allowDataChanges = false) {
+async function generate(request: Request, context: Context, orgId: string, prompt: string | null, previous: PreviousStudioApplication | null) {
   const settings = await credentials(context, orgId);
   if (!settings) throw new HttpError(409, 'Configura Azure OpenAI en Admin → LLM Settings.');
   const apiKey = decrypt(settings, orgId);
@@ -210,14 +212,14 @@ async function generate(request: Request, context: Context, orgId: string, promp
         if (!record(output) || output.ok !== true || Object.keys(output).length !== 1) throw new HttpError(422, 'El modelo no completó la prueba JSON.');
         return { ok: true, message: 'Conexión y JSON verificados con Azure Responses v1. La configuración está disponible para esta organización.' };
       }
-      const result = await generateStudioApplication(prompt, previous, dashboardKit, async completion => {
+      const result = await generateHTMLApplication(prompt, previous, async completion => {
         stage = completion.stage;
         progress(stage);
         const callStarted = Date.now();
         const output = await callAzure(settings, apiKey, completion, signal);
         console.info('Studio Azure phase completed', { operation: lease, stage, durationMs: Date.now() - callStarted });
         return output;
-      }, allowDataChanges);
+      }, validateGeneratedHTML);
       stage = 'validate';
       progress(stage);
       signal.throwIfAborted();
@@ -255,7 +257,8 @@ export async function organizationAzure(request: Request, path: string): Promise
       throw new HttpError(404, 'Ruta o método no disponibles.');
     }
     validateMutation(request, context);
-    const body = await readJson(request, 250_000);
+    // JSON escaping can expand a 200 KB prior HTML document to over one megabyte.
+    const body = await readJson(request, path === '/api/studio/generate' ? 1_300_000 : 250_000);
     if (path === '/api/llm/settings') {
       const fields = azureSaveSchema.parse(body);
       authorize(context, fields.orgId, true);
@@ -285,7 +288,13 @@ export async function organizationAzure(request: Request, path: string): Promise
     }
     const fields = azureGenerationSchema.parse(body);
     authorize(context, fields.orgId);
-    const previous = fields.previous === undefined || fields.previous === null ? null : dashboard(fields.previous);
-    return await generate(request, context, fields.orgId, fields.prompt, previous, fields.allowDataChanges);
+    let previous: PreviousStudioApplication | null = null;
+    if (fields.previous !== undefined && fields.previous !== null) {
+      if (record(fields.previous) && fields.previous.format === 'html') {
+        try { previous = validateGeneratedHTML(fields.previous); }
+        catch { throw new HttpError(400, 'La aplicación HTML previa no es válida. La versión anterior se conserva.'); }
+      } else previous = dashboard(fields.previous);
+    }
+    return await generate(request, context, fields.orgId, fields.prompt, previous);
   } catch (error) { return errorResponse(error); }
 }

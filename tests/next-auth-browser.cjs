@@ -6,6 +6,8 @@ const path = require('node:path');
 const { randomBytes, createHmac } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
+require('tsx/cjs');
+const { htmlApplication } = require('./next-studio-html-fixture.ts');
 const root = path.resolve(__dirname, '..');
 const roles = ['developer', 'catalog', 'admin', 'superadmin'];
 const studioRoles = ['developer', 'admin', 'superadmin'];
@@ -55,6 +57,7 @@ let sourceVersion = 3, sourceReadFailure = false;
 const sourceReads = [], commands = [];
 const createdApps = [];
 const flowEntries = new Map();
+const appStates = new Map();
 const applicationSources = new Map();
 const portableUploads = new Map(), portableManifests = new Map(), portableObjects = new Map();
 const portableCalls = [], storageCalls = [], applicationReviews = [];
@@ -226,6 +229,23 @@ const backend = http.createServer(async (request, response) => {
     if (url.pathname === '/api/database/rpc/tk_workspace') {
       if (!account?.enabled || !account.verified) return fail(response, 401);
       return send(response, 200, workspace(account));
+    }
+    if (['/api/database/rpc/tk_app_state_read', '/api/database/rpc/tk_app_state_save'].includes(url.pathname)) {
+      if (!account?.enabled || !account.verified) return fail(response, 401);
+      const app = createdApps.find(app => app.id === body.p_id && app.orgId === orgId && app.reviewStatus === 'approved' && !app.deletedAt);
+      if (!app || !['active', 'active-amber'].includes(applicationOrganizationStatus)) return send(response, 403, { code: '42501', message: 'App unavailable' });
+      if (body.p_version !== app.version) return send(response, 409, { code: '40001', message: 'App version changed' });
+      const key = `${account.id}:${app.id}`, current = appStates.get(key) || { state: {}, revision: 0 };
+      if (url.pathname.endsWith('tk_app_state_read')) {
+        assert.deepEqual(Object.keys(body).sort(), ['p_id', 'p_version']);
+        return send(response, 200, current);
+      }
+      assert.deepEqual(Object.keys(body).sort(), ['p_id', 'p_revision', 'p_state', 'p_version']);
+      if (!body.p_state || Array.isArray(body.p_state) || typeof body.p_state !== 'object' || Object.keys(body.p_state).length > 100 || Object.entries(body.p_state).some(([key, value]) => key.length > 120 || typeof value !== 'string') || Buffer.byteLength(JSON.stringify(body.p_state)) > 200000) return send(response, 400, { code: '22023', message: 'Invalid app state' });
+      if (body.p_revision !== current.revision) return send(response, 409, { code: '40001', message: 'App state changed in another tab' });
+      const saved = { state: body.p_state, revision: current.revision + 1 };
+      appStates.set(key, saved);
+      return send(response, 200, saved);
     }
     if (url.pathname === '/api/database/rpc/tk_can_use_flow_app') {
       assert.ok(account?.enabled && account.verified);
@@ -604,7 +624,7 @@ async function main() {
         await preview.getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
         assert.equal(storageCalls.length, beforeStorage, 'Preview must not upload any assets');
         assert.equal(await page.locator('.portable-file-list li').count(), 2);
-        assert.equal(await page.locator('.portable-preview iframe').getAttribute('sandbox'), 'allow-scripts allow-downloads');
+        assert.equal(await page.locator('.portable-preview iframe').getAttribute('sandbox'), 'allow-scripts allow-downloads allow-forms');
         assert.equal(await preview.locator('body').evaluate(() => { try { void parent.document.body; return false; } catch { return true; } }), true);
         await page.getByRole('button', { name: 'Código', exact: true }).click();
         await page.locator('.portable-code select').selectOption('data.json');
@@ -675,7 +695,7 @@ async function main() {
         await card.getByRole('button', { name: 'Acceder', exact: true }).click();
         const launched = catalogPage.frameLocator('.application-frame');
         await launched.getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
-        assert.equal(await catalogPage.locator('.application-frame').getAttribute('sandbox'), 'allow-scripts allow-downloads');
+        assert.equal(await catalogPage.locator('.application-frame').getAttribute('sandbox'), 'allow-scripts allow-downloads allow-forms');
         await launched.getByRole('button', { name: 'Increment', exact: true }).click();
         await launched.getByText('Linked JSON ✓: 8', { exact: true }).waitFor();
         const downloadEvent = catalogPage.waitForEvent('download');
@@ -919,7 +939,7 @@ async function main() {
         const frame = page.frameLocator('.application-frame');
         await frame.locator('#dashboard-table tbody tr').first().waitFor();
         assert.deepEqual(JSON.parse(await frame.locator('#blk-dashboard-config').textContent()), kit.validate(sourceConfig));
-        assert.equal(await page.locator('.application-frame').getAttribute('sandbox'), 'allow-scripts allow-downloads');
+        assert.equal(await page.locator('.application-frame').getAttribute('sandbox'), 'allow-scripts allow-downloads allow-forms');
         assert.equal(await page.locator('.application-frame').getAttribute('referrerpolicy'), 'no-referrer');
         assert.equal(await page.locator('.studio-chat, #promptInput, .studio-preview-toolbar').count(), 0);
         assert.equal(await page.locator('.top-bar').isVisible(), true);
@@ -933,10 +953,13 @@ async function main() {
         await frame.locator('#dashboard-filters button').first().click();
         const checkSize = async () => {
           const main = await page.locator('#main-content').boundingBox(), toolbar = await page.locator('.application-toolbar').boundingBox();
+          const runtime = await page.locator('.generated-app-runtime').boundingBox(), stateToolbar = await page.locator('.application-state-toolbar').boundingBox();
           const box = await page.locator('.application-frame').boundingBox();
           assert.equal(box.x, main.x);
           assert.equal(box.width, main.width);
-          assert.ok(Math.abs(box.y - (toolbar.y + toolbar.height)) <= 1);
+          assert.ok(Math.abs(runtime.y - (toolbar.y + toolbar.height)) <= 1);
+          assert.ok(Math.abs(stateToolbar.y - runtime.y) <= 1);
+          assert.ok(Math.abs(box.y - (stateToolbar.y + stateToolbar.height)) <= 1);
           assert.ok(Math.abs(box.y + box.height - (main.y + main.height)) <= 1);
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
         };
@@ -1160,7 +1183,7 @@ async function main() {
           await page.route('**/api/studio/generate', async route => {
             const body = route.request().postDataJSON();
             assert.equal(body.orgId, orgId); assert.equal(body.previous, null);
-            await route.fulfill({ status: 200, json: { provider: 'azure-openai', model: 'synthetic-model', config: sourceConfig } });
+            await route.fulfill({ status: 200, json: { provider: 'azure-openai', model: 'synthetic-model', application: htmlApplication } });
           });
           await page.goto(base + '/studio');
           await page.waitForFunction(() => document.querySelector('#promptInput')?.disabled === false);
@@ -1264,8 +1287,8 @@ async function main() {
         assert.equal(await page.locator('#codePanel code').textContent(), sourceHtml);
         assert.match(await page.locator('.studio-attachments li').getAttribute('title'), /text\/csv/);
         await page.getByRole('button', { name: 'Quitar reference.csv', exact: true }).waitFor();
-        const sandbox = page.locator('#previewFrame');
-        assert.equal(await sandbox.getAttribute('sandbox'), 'allow-scripts');
+        const sandbox = page.locator('.studio-preview-stage iframe');
+        assert.equal(await sandbox.getAttribute('sandbox'), 'allow-scripts allow-downloads allow-forms');
         assert.match(await sandbox.getAttribute('srcdoc'), /connect-src 'none'/);
         await page.getByRole('button', { name: 'Crear rama', exact: true }).click();
         const key = `blkunit:studio:v1:${orgId}:${accounts[0].id}:${sourceId(0)}`;

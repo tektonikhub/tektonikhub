@@ -3,11 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useBLK } from '@/hooks/use-blk';
 import { addVersion, branchVersion, blankDraft, bytes, draftKey, localPersistence, MAX_MESSAGES, restoreVersion, validateFiles } from '@/lib/studio/draft';
-import { checkAbort, dashboardFromHTML, generatedDocument, provenanceFromHTML, isolatedHTML, loadEngines, specForKind, waitForGeneration, withDashboard } from '@/lib/studio/engines';
+import { checkAbort, dashboardFromHTML, generatedDocument, provenanceFromHTML, isolatedHTML, loadEngines, waitForGeneration, withDashboard } from '@/lib/studio/engines';
 import { llm } from '@/lib/studio/llm';
 import { loadSubmissionSource } from '@/lib/studio/source';
 import type { App, SubmissionFields } from '@/lib/domain/types';
 import type { DashboardKit, StudioDraft, StudioEngine, StudioPersistence, StudioScope } from '@/lib/studio/types';
+import { validateHTMLApplication, type PreviousStudioApplication } from '@/lib/studio/html-generation';
 type LLMConnection = {orgId:string;userId:string;revision:number;status:'checking'|'configured'|'unconfigured'|'unavailable';message:string};
 export function downloadText(text:string,name:string,type='text/html;charset=utf-8'){
   const url=URL.createObjectURL(new Blob([text],{type}));const anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -98,19 +99,21 @@ export function useStudio(){
     commit({...initial,messages:[...initial.messages,{role:'user' as const,text:prompt}].slice(-MAX_MESSAGES)});
     try{
       setGenerationStatus(previous?'Diseñando los cambios y revisando la aplicación…':'Ampliando tu idea, diseñando los flujos y construyendo la aplicación…');
-      const prior=previous?.spec.dashboard||null;
-      if(previous&&!prior)throw new Error('Esta versión antigua no es un dashboard compatible. Exporta tu trabajo y reinicia el borrador antes de crear con el LLM.');
+      const prior: PreviousStudioApplication | null = previous?.spec.format === 'html'
+        ? validateHTMLApplication({ ...previous.spec.htmlApp, html: previous.html })
+        : previous?.spec.dashboard || (previous ? validateHTMLApplication({ format:'html', title:previous.spec.title, description:previous.spec.description, html:previous.html, features:['Aplicación existente'], limitations:[], theme:{accent:previous.spec.accent,dark:previous.spec.dark} }) : null);
       const result=await llm.generate(orgId,prompt,prior,engines.kit,controller.signal,authorizedDataChanges,({stage,elapsedMs})=>{
         if(controller.signal.aborted||revision!==sessionRevision.current)return;
         const labels={expand:'Ampliando tu idea y diseñando los flujos',compose:'Construyendo la aplicación',repair:'Revisando y corrigiendo la configuración',validate:'Validando la aplicación y preparando la vista previa'};
         setGenerationStatus(`${labels[stage]}…${elapsedMs>=15_000?` · ${Math.floor(elapsedMs/1000)} s`:''}`);
       });
-      const config=engines.kit.validate(result.config),model=result.model;
-      const spec=withDashboard(specForKind(engines.engine,prompt,'dashboard',previous?.spec||null),config);
+      const application=result.application,model=result.model;
+      const {html:sourceHTML,...htmlApp}=application;
+      const spec={kind:'dashboard' as const,title:application.title,description:application.description,accent:application.theme.accent,dark:application.theme.dark,compact:false,chart:false,search:false,area:previous?.spec.area||'operaciones',format:'html' as const,htmlApp,runtimeId:previous?.spec.runtimeId||crypto.randomUUID()};
       checkAbort(controller.signal);setGenerationStatus('Preparando la vista previa…');await waitForGeneration(controller.signal);
-      const html=generatedDocument(engines.kit.renderHTML(config),'azure-openai',model);
+      const html=generatedDocument(sourceHTML,'azure-openai',model);
       checkAbort(controller.signal);if(revision!==sessionRevision.current)return;
-      const explanation=[result.brief?.summary||'Aplicación creada a partir de tu descripción.',`${config.components.length} bloques interactivos y de contenido validados.`,result.brief?.features.length?`Incluye: ${result.brief.features.join(' · ')}.`:'',result.brief?.assumptions.length?`Supuestos: ${result.brief.assumptions.join(' · ')}.`:'',result.brief?.limitations.length?`Límites: ${result.brief.limitations.join(' · ')}.`:'','Revisa la vista previa y describe los cambios que necesites. Datos sintéticos, sin conexión a la red. La edición de registros y las marcas de los checklists viven solo en la vista previa y se reinician al recargar o exportar.'].filter(Boolean).join('\n\n').slice(0,4000);
+      const explanation=[result.brief?.summary||'Aplicación creada a partir de tu descripción.',`Incluye: ${application.features.join(' · ')}.`,result.brief?.assumptions.length?`Supuestos: ${result.brief.assumptions.join(' · ')}.`:'',application.limitations.length?`Límites: ${application.limitations.join(' · ')}.`:'','Revisa los controles y describe los cambios que necesites. Los datos que introduzcas se guardan de forma privada para esta aplicación. El HTML exportado funciona por sí solo y guarda su estado en el navegador donde lo abras; no incluye el estado privado de Studio. Las integraciones externas requieren una implementación adicional.'].filter(Boolean).join('\n\n').slice(0,4000);
       commit(addVersion(draftRef.current,{spec,html,provider:'azure-openai',model,createdAt:new Date().toISOString(),...(previous?{parentId:previous.id}:{})},explanation));
     }catch(generationError){
       if(revision!==sessionRevision.current)return;

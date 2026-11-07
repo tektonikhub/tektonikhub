@@ -1,4 +1,5 @@
 import type { DashboardKit, FileMetadata, StudioDraft, StudioPersistence, StudioScope, StudioSpec, StudioVersion, StudioMessage } from './types';
+import { htmlApplicationSchema, validateHTMLApplication } from './html-generation';
 export const MAX_VERSIONS = 8, MAX_MESSAGES = 40, MAX_HTML_BYTES = 200_000, MAX_DRAFT_BYTES = 3_000_000;
 export const bytes = (text: string) => new TextEncoder().encode(text).length;
 export function blankDraft(): StudioDraft { return { schemaVersion: 1, messages: [], versions: [], selectedId: null, nextVersion: 1, submission: null, files: [] }; }
@@ -9,7 +10,11 @@ function integer(value: unknown): value is number { return typeof value === 'num
 function spec(value: unknown, kit: Pick<DashboardKit, 'validate'>): StudioSpec {
   if (!record(value) || typeof value.kind!=='string' || !['dashboard','calculator','form','kanban'].includes(value.kind) || !text(value.title,160) || !text(value.description,800) || !text(value.area,80) || !text(value.accent,16) || !/^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(value.accent)) throw new Error('Especificación de versión inválida.');
   for (const key of ['dark','compact','chart','search']) if (typeof value[key] !== 'boolean') throw new Error('Opciones de versión inválidas.');
-  return { kind: value.kind as StudioSpec['kind'], title:value.title,description:value.description,area:value.area,accent:value.accent,dark:value.dark === true,compact:value.compact === true,chart:value.chart === true,search:value.search === true, ...(value.dashboard ? { dashboard: kit.validate(value.dashboard) } : {}) };
+  if (value.runtimeId !== undefined && (typeof value.runtimeId !== 'string' || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(value.runtimeId))) throw new Error('Identificador de estado inválido.');
+  if (value.format !== undefined && value.format !== 'html') throw new Error('Formato de aplicación inválido.');
+  if ((value.format === 'html') !== (value.htmlApp !== undefined) || (value.format === 'html' && value.dashboard !== undefined)) throw new Error('Metadatos HTML inválidos.');
+  const htmlApp = value.format === 'html' ? htmlApplicationSchema.omit({ html: true }).parse(value.htmlApp) : undefined;
+  return { kind: value.kind as StudioSpec['kind'], title:value.title,description:value.description,area:value.area,accent:value.accent,dark:value.dark === true,compact:value.compact === true,chart:value.chart === true,search:value.search === true, ...(value.dashboard ? { dashboard: kit.validate(value.dashboard) } : {}), ...(htmlApp ? { format: 'html' as const, htmlApp } : {}), ...(typeof value.runtimeId === 'string' ? { runtimeId: value.runtimeId } : {}) };
 }
 export function validateFiles(input: unknown, maxFiles = 12, maxBytes = 25_000_000): FileMetadata[] {
   if (!Array.isArray(input) || input.length > maxFiles) throw new Error('Demasiados adjuntos.');
@@ -29,7 +34,9 @@ export function parseDraft(raw: string, kit: Pick<DashboardKit, 'validate'>): St
   const nextVersion = value.nextVersion;
   const versions = value.versions.map((version: unknown): StudioVersion => {
     if (!record(version) || !integer(version.id) || !text(version.html,300_000) || bytes(version.html) > 300_000 || !text(version.createdAt,80) || !Number.isFinite(Date.parse(version.createdAt)) || (version.provider !== undefined && (typeof version.provider!=='string'||!['demo','azure-openai'].includes(version.provider))) || (version.model !== undefined && !text(version.model,128)) || (version.parentId !== undefined && !integer(version.parentId))) throw new Error('Versión inválida.');
-    return {id:version.id,html:version.html,spec:spec(version.spec,kit),createdAt:version.createdAt,provider:version.provider === 'azure-openai' ? 'azure-openai':'demo',...(typeof version.model === 'string'?{model:version.model}:{}),...(typeof version.parentId === 'number'?{parentId:version.parentId}:{})};
+    const validatedSpec = spec(version.spec,kit);
+    if (validatedSpec.format === 'html') validateHTMLApplication({ ...validatedSpec.htmlApp, html: version.html });
+    return {id:version.id,html:version.html,spec:validatedSpec,createdAt:version.createdAt,provider:version.provider === 'azure-openai' ? 'azure-openai':'demo',...(typeof version.model === 'string'?{model:version.model}:{}),...(typeof version.parentId === 'number'?{parentId:version.parentId}:{})};
   });
   if (new Set(versions.map(v=>v.id)).size !== versions.length || versions.some(v=>v.id >= nextVersion)) throw new Error('Numeración inválida.');
   if (value.selectedId !== null && (!integer(value.selectedId) || !versions.some(v=>v.id === value.selectedId))) throw new Error('Versión seleccionada inexistente.');

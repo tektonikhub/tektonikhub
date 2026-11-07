@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { generationStream, GENERATION_HEARTBEAT_MS, readGenerationStream, type GenerationProgress } from '../lib/studio/generation-stream';
+import { generationStream, GENERATION_HEARTBEAT_MS, readGenerationStream, type GenerationProgress, MAX_GENERATION_EVENT_BYTES } from '../lib/studio/generation-stream';
 import { STUDIO_GENERATION_TIMEOUT } from '../lib/studio/generation';
 import { llm } from '../lib/studio/llm';
+import { htmlApplication } from './next-studio-html-fixture';
 import { createRequire } from 'node:module';
 import type { DashboardKit } from '../lib/studio/types';
 const require = createRequire(import.meta.url);
@@ -71,11 +72,11 @@ test('generation parser rejects malformed, oversized, duplicate terminal and uns
     [{ type: 'heartbeat', elapsedMs: -1 }],
     [{ type: 'heartbeat', elapsedMs: '65' }],
     [{ type: 'result' }],
-    [{ type: 'result', result: 'x'.repeat(260_000) }],
+    [{ type: 'result', result: 'x'.repeat(MAX_GENERATION_EVENT_BYTES + 1) }],
     [{ type: 'result', result: {} }, { type: 'result', result: {} }],
     [{ type: 'result', result: {} }, { type: 'progress', stage: 'validate', elapsedMs: 0 }],
     [{ type: 'error', error: 'secret', status: 200 }],
-    [{ type: 'result', result: 'x'.repeat(300_000) }],
+    [{ type: 'result', result: 'x'.repeat(1_400_001) }],
   ]) await assert.rejects(readGenerationStream(response(events)), /incompleta/);
   await assert.rejects(readGenerationStream(new Response(new Uint8Array([0xff]))));
   await assert.rejects(readGenerationStream(new Response('not JSON\n')), /incompleta/);
@@ -113,6 +114,27 @@ test('browser cancellation during stream consumption stays an AbortError', async
   await assert.rejects(pending, { name: 'AbortError' });
 });
 
+test('HTML near the UTF-8 bound supports JSON-escaped streaming and iteration requests', async () => {
+  const application = { ...htmlApplication, html: htmlApplication.html.replace('</body>', `<pre hidden>${'"\\\n'.repeat(60_000)}</pre></body>`) };
+  const payload = { application, provider: 'azure-openai', model: 'test-model' };
+  assert.ok(new TextEncoder().encode(application.html).length < 200_000);
+  assert.ok(encode([{ type: 'result', result: payload }]).length > 250_000);
+  assert.deepEqual(await readGenerationStream(response([{ type: 'result', result: payload }])), payload);
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async (input, options) => {
+      if (String(input) === '/api/session') return Response.json({ csrf: 'a'.repeat(64) });
+      assert.ok(new TextEncoder().encode(String(options!.body)).length > 250_000);
+      assert.equal(JSON.parse(String(options!.body)).previous.html, application.html);
+      return response([{ type: 'result', result: payload }]);
+    };
+    const result = await llm.generate('org', 'Cambia el color sin perder los viajes', application, kit, new AbortController().signal);
+    assert.equal(result.application.html, application.html);
+  } finally { globalThis.fetch = original; }
+  const azure = readFileSync(join('lib', 'server', 'azure.ts'), 'utf8');
+  assert.match(azure, /path === '\/api\/studio\/generate' \? 1_300_000/);
+});
+
 test('Azure client consumes real stage events and validates final configuration without reissuing failures', async () => {
   const original = globalThis.fetch, progress: GenerationProgress[] = [];
   let calls = 0;
@@ -121,10 +143,10 @@ test('Azure client consumes real stage events and validates final configuration 
       if (String(input) === '/api/session') return Response.json({ csrf: 'a'.repeat(64) });
       calls++;
       assert.equal((options!.headers as Record<string, string>).Accept, 'application/x-ndjson');
-      return response([{ type: 'progress', stage: 'compose', elapsedMs: 65_000 }, { type: 'result', result: { config, provider: 'azure-openai', model: 'synthetic-model' } }]);
+      return response([{ type: 'progress', stage: 'compose', elapsedMs: 65_000 }, { type: 'result', result: { application: htmlApplication, provider: 'azure-openai', model: 'test-model' } }]);
     };
     const result = await llm.generate('org', 'ventas', null, kit, new AbortController().signal, false, value => progress.push(value));
-    assert.deepEqual(result.config, kit.validate(config));
+    assert.deepEqual(result.application, htmlApplication);
     assert.deepEqual(progress, [{ stage: 'compose', elapsedMs: 65_000 }]);
     globalThis.fetch = async () => { calls++; return response([{ type: 'error', status: 504, error: 'Azure agotó el plazo de generación.' }]); };
     await assert.rejects(llm.generate('org', 'ventas', null, kit, new AbortController().signal), /agotó/);

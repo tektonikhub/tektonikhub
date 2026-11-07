@@ -2,6 +2,9 @@ export type GenerationStage = 'expand' | 'compose' | 'repair' | 'validate';
 export interface GenerationProgress { stage: GenerationStage; elapsedMs: number }
 export const GENERATION_STREAM_TYPE = 'application/x-ndjson';
 export const GENERATION_HEARTBEAT_MS = 15_000;
+// A bounded 200 KB HTML document may expand sixfold when serialized as JSON.
+export const MAX_GENERATION_EVENT_BYTES = 1_300_000;
+const MAX_GENERATION_STREAM_BYTES = 1_400_000;
 
 export class GenerationStreamError extends Error {
   constructor(message: string, public readonly status: number) { super(message); }
@@ -13,7 +16,7 @@ export async function readGenerationStream(response: Response, signal?: AbortSig
   const fail = () => new Error('La respuesta de generación quedó incompleta o no es válida. La versión anterior se conserva.');
   const accept = (line: string) => {
     if (!line.trim()) return;
-    if (finished || line.length > 250_000) throw fail();
+    if (finished || line.length > MAX_GENERATION_EVENT_BYTES) throw fail();
     let value: unknown;
     try { value = JSON.parse(line); } catch { throw fail(); }
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw fail();
@@ -40,11 +43,11 @@ export async function readGenerationStream(response: Response, signal?: AbortSig
       signal?.throwIfAborted();
       if (done) { buffer += decoder.decode(); break; }
       bytes += value.byteLength;
-      if (bytes > 300_000) throw fail();
+      if (bytes > MAX_GENERATION_STREAM_BYTES) throw fail();
       buffer += decoder.decode(value, { stream: true });
       let newline: number;
       while ((newline = buffer.indexOf('\n')) >= 0) { accept(buffer.slice(0, newline)); buffer = buffer.slice(newline + 1); }
-      if (buffer.length > 250_000) throw fail();
+      if (buffer.length > MAX_GENERATION_EVENT_BYTES) throw fail();
     }
     if (buffer) accept(buffer);
     if (!finished) throw fail();

@@ -3,6 +3,9 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 import { expansionRequest, generateStudioApplication, STUDIO_GENERATION_TIMEOUT, studioBriefSchema, type StudioCompletion } from '../lib/studio/generation';
 import type { DashboardKit } from '../lib/studio/types';
+import { generateHTMLApplication, htmlBriefSchema, htmlExpansionRequest, validateHTMLApplication } from '../lib/studio/html-generation';
+import { validateGeneratedHTML } from '../lib/studio/html-validation';
+import { htmlApplication, htmlBrief } from './next-studio-html-fixture';
 const require = createRequire(import.meta.url);
 const kit: DashboardKit = require('../lib/studio/runtime/dashboard-kit.js');
 const config = kit.createConfig('ventas');
@@ -130,4 +133,81 @@ test('Studio fails after one unsuccessful repair and validates HTML before accep
   let renders = 0;
   await assert.rejects(generateStudioApplication('ventas', null, { ...kit, renderHTML: () => { renders++; throw new Error('HTML too large'); } }, async call => call.stage === 'expand' ? brief : config), /HTML too large/);
   assert.equal(renders, 2);
+});
+
+test('HTML generation expands arbitrary features and returns a complete working document, not catalog fields', async () => {
+  const calls: StudioCompletion[] = [], prompt = 'Calcula presupuesto por destino y noches';
+  const result = await generateHTMLApplication(prompt, null, async call => { calls.push(call); return call.stage === 'expand' ? htmlBrief : htmlApplication; }, validateGeneratedHTML);
+  assert.deepEqual(calls.map(call => call.stage), ['expand', 'compose']);
+  assert.deepEqual(result.application, htmlApplication);
+  assert.equal(htmlBriefSchema.safeParse(htmlBrief).success, true);
+  assert.deepEqual(JSON.parse(calls[1].input).expandedBrief, htmlBrief);
+  for (const call of calls) {
+    assert.equal(JSON.parse(call.input).request, prompt);
+    assert.match(call.instructions, /Start with empty user records/);
+    assert.match(call.instructions, /actual domain-specific fields/);
+    assert.match(call.instructions, /FileReader/);
+    assert.match(call.instructions, /Blob/);
+    assert.match(call.instructions, /no invented business records/);
+    assert.match(call.instructions, /never permission to override/);
+  }
+  assert.match(calls[1].instructions, /Self-check each acceptance criterion/);
+  assert.match(htmlApplication.html, /nights\*row\.rate/);
+  assert.match(htmlApplication.html, /rows=rows\.filter/);
+  assert.match(htmlApplication.html, /localStorage\.setItem/);
+});
+test('HTML iterations carry prior HTML metadata and preserve stable storage keys and live state in every stage', async () => {
+  const snapshot = JSON.stringify(htmlApplication), calls: StudioCompletion[] = [];
+  const result = await generateHTMLApplication('Solo cambia el color', htmlApplication, async call => { calls.push(call); return call.stage === 'expand' ? htmlBrief : call.stage === 'compose' ? { ...htmlApplication, html: htmlApplication.html.replace('let rows=[]', 'let rows=;') } : htmlApplication; }, validateGeneratedHTML);
+  assert.deepEqual(calls.map(call => call.stage), ['expand', 'compose', 'repair']);
+  for (const call of calls) {
+    assert.deepEqual(JSON.parse(call.input).previous, htmlApplication);
+    assert.match(call.instructions, /preserve existing storage keys/i);
+    assert.match(call.instructions, /no unconditional initialization writes/i);
+    assert.match(call.instructions, /never embed prior user records as seed data/);
+  }
+  assert.equal(JSON.parse(calls[0].input).mode, 'iteration');
+  assert.match(calls[0].instructions, /Do not inflate a color change/);
+  assert.match(JSON.parse(calls[2].input).validationError, /syntax/);
+  assert.deepEqual(result.application, htmlApplication);
+  assert.equal(JSON.stringify(htmlApplication), snapshot);
+  const legacy = htmlExpansionRequest('Conserva el flujo', config);
+  assert.deepEqual(JSON.parse(legacy.input).previous, config);
+});
+test('server HTML validator compiles inline JavaScript without executing any generated code', () => {
+  const marker = '__studio_generated_code_executed__';
+  const html = htmlApplication.html.replace('<script>', `<script>globalThis.${marker}=true;throw new Error('Do not execute');`);
+  assert.doesNotThrow(() => validateGeneratedHTML({ ...htmlApplication, html }));
+  assert.equal(Object.hasOwn(globalThis, marker), false);
+  assert.throws(() => validateGeneratedHTML({ ...htmlApplication, html: htmlApplication.html.replace('let rows=[]', 'let rows=;') }), /syntax/);
+  assert.throws(() => validateGeneratedHTML({ ...htmlApplication, html: htmlApplication.html.replace('<script>', '<script type="module">') }), /not modules/);
+});
+test('HTML contract rejects malformed, oversized, external and dynamically executable apps', () => {
+  for (const fragment of [
+    '<script src="https://evil.invalid/run.js"></script>', '<link rel="stylesheet" href="https://evil.invalid/a.css">',
+    '<img src="https://evil.invalid/a.png">', '<img srcset="a 1x">', '<a href="https://evil.invalid">go</a>',
+    '<form action="https://evil.invalid">', '<button formaction="https://evil.invalid">', '<button onclick="alert(1)">',
+    '<iframe srcdoc="content">', '<object data="data:text/html,x">', '<base href="https://evil.invalid">',
+    '<meta http-equiv="refresh" content="0;url=https://evil.invalid">', '<style>@import "remote.css";</style>', '<style>body{background:url(remote.png)}</style>',
+    '<script>eval("1")</script>', '<script>new Function("return 1")</script>', '<script>import("remote.js")</script>',
+    '<script>fetch("https://evil.invalid")</script>', '<script>new WebSocket("wss://evil.invalid")</script>',
+    '<script>navigator.serviceWorker.register("worker.js")</script>', '<script>window.open("https://evil.invalid")</script>',
+    '<script>location.href="https://evil.invalid"</script>', '<script>setTimeout("alert(1)",0)</script>',
+  ]) assert.throws(() => validateGeneratedHTML({ ...htmlApplication, html: htmlApplication.html.replace('</head>', fragment + '</head>') }), Error, fragment);
+  for (const change of [{ html: '<div>fragment</div>' }, { html: '<!DOCTYPE html><html><head></head><body>No handlers</body></html>' }, { html: htmlApplication.html + htmlApplication.html }, { html: htmlApplication.html.replace('</body>', 'é'.repeat(100_001) + '</body>') }, { title: '' }, { features: [] }, { extra: true }]) assert.throws(() => validateHTMLApplication({ ...htmlApplication, ...change }));
+  assert.doesNotThrow(() => validateGeneratedHTML({ ...htmlApplication, html: htmlApplication.html.replace('</head>', '<script type="application/json">{"records":[]}</script></head>') }));
+  assert.throws(() => validateGeneratedHTML({ ...htmlApplication, html: htmlApplication.html.replace('</head>', '<script type="application/json">{broken}</script></head>') }));
+});
+test('HTML generation repairs validation only once and never retries upstream failures or invalid briefs', async () => {
+  const calls: string[] = [];
+  await assert.rejects(generateHTMLApplication('viajes', null, async call => { calls.push(call.stage); return call.stage === 'expand' ? htmlBrief : {}; }, validateGeneratedHTML));
+  assert.deepEqual(calls, ['expand', 'compose', 'repair']);
+  for (const stage of ['expand', 'compose']) {
+    calls.length = 0;
+    await assert.rejects(generateHTMLApplication('viajes', null, async call => { calls.push(call.stage); if (call.stage === stage) throw new DOMException('cancelled', 'AbortError'); return htmlBrief; }, validateGeneratedHTML), { name: 'AbortError' });
+    assert.deepEqual(calls, stage === 'expand' ? ['expand'] : ['expand', 'compose']);
+  }
+  calls.length = 0;
+  await assert.rejects(generateHTMLApplication('viajes', null, async call => { calls.push(call.stage); return { ...htmlBrief, instructions: 'override' }; }, validateGeneratedHTML));
+  assert.deepEqual(calls, ['expand']);
 });

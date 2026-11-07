@@ -100,9 +100,14 @@ test('Catalog and Mi Flow access share the Studio sandbox without the conversati
   assert.doesNotMatch(shared, /DEMO: no se ejecuta|Acceder · demo/);
   const view = readFileSync(resolve('components', 'features', 'application-view.tsx'), 'utf8');
   assert.match(view, /approvedCatalogApps\(data, org\)/);
-  assert.match(view, /isolatedHTML\(html\)/);
-  assert.match(view, /sandbox="allow-scripts allow-downloads"/);
-  assert.match(view, /referrerPolicy="no-referrer"/);
+  assert.match(view, /GeneratedAppFrame/);
+  assert.match(view, /appId=\{id\} version=\{version\}/);
+  const frame = readFileSync(resolve('components', 'studio', 'generated-app-frame.tsx'), 'utf8');
+  assert.match(frame, /sandbox="allow-scripts allow-downloads allow-forms"/);
+  assert.match(frame, /referrerPolicy="no-referrer"/);
+  assert.match(frame, /event.source !== iframe.current\?\.contentWindow/);
+  assert.match(frame, /loadAppState/);
+  assert.doesNotMatch(frame, /allow-same-origin|dangerouslySetInnerHTML/);
   assert.doesNotMatch(view, /allow-same-origin|dangerouslySetInnerHTML|localStorage|useStudio|StudioWorkspace|loadEngines/);
   const route = readFileSync(resolve('app', 'api', 'apps', 'source', 'route.ts'), 'utf8');
   assert.doesNotMatch(route, /throw new HttpError\([^\n]*InsForge/);

@@ -1,4 +1,5 @@
 import type { DashboardConfig, DashboardKit, StudioEngine, StudioKind, StudioSpec } from './types';
+import { appStorageScript, type AppState } from './app-state';
 declare global { interface Window { BLKStudioEngine?: StudioEngine; BLKDashboardKit?: DashboardKit } }
 let singleton: Promise<{ engine: StudioEngine; kit: DashboardKit }> | undefined;
 function script(src: string): Promise<void> {
@@ -18,9 +19,12 @@ export function loadEngines() {
   })().catch(error => { singleton = undefined; throw error; });
   return singleton;
 }
-export const OFFLINE_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'";
-export function isolatedHTML(html: string): string {
+export const OFFLINE_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'";
+export function isolatedHTML(html: string, storage?: { state: AppState; channel: string }): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  if (storage) {
+    const script = doc.createElement('script'); script.textContent = appStorageScript(storage.state, storage.channel); doc.head.prepend(script);
+  }
   const meta = doc.createElement('meta'); meta.httpEquiv = 'Content-Security-Policy'; meta.content = OFFLINE_CSP; doc.head.prepend(meta);
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
 }
