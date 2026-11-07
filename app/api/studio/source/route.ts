@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { htmlSourceSchema } from '@/lib/studio/limits';
 import { authenticatedContext } from '@/lib/server/auth';
 import { studioRoles } from '@/lib/auth/policy';
 import { databaseError, errorResponse, HttpError, jsonResponse } from '@/lib/server/http';
 
 const querySchema = z.object({ appId: z.uuid(), version: z.coerce.number().int().positive().max(2147483647) }).strict();
 const appSchema = z.object({ version: z.number().int().positive(), review_status: z.string() });
-const sourceSchema = z.object({ generated_html: z.string().max(300000).nullable() });
+const sourceSchema = z.object({ generated_html: htmlSourceSchema.nullable() });
 
 export async function GET(request: Request) {
   try {

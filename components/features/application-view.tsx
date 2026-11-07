@@ -43,5 +43,5 @@ function ApplicationPreview({ app }: { app: App }) {
   if (state.status === 'error') return <div className="application-message application-error" role="alert">
     <p>{state.message}</p><Button onClick={() => window.location.reload()}>Reintentar</Button>
   </div>;
-  return <iframe className="application-frame" title={`Aplicación ${app.title}`} sandbox="allow-scripts" srcDoc={state.html} referrerPolicy="no-referrer" />;
+  return <iframe className="application-frame" title={`Aplicación ${app.title}`} sandbox="allow-scripts allow-downloads" srcDoc={state.html} referrerPolicy="no-referrer" />;
 }
