@@ -97,7 +97,7 @@ export function useStudio(){
     const initial=draftRef.current,previous=initial.versions.find(v=>v.id===initial.selectedId),authorizedDataChanges=allowDataChanges;setAllowDataChanges(false);
     commit({...initial,messages:[...initial.messages,{role:'user' as const,text:prompt}].slice(-MAX_MESSAGES)});
     try{
-      setGenerationStatus('Generando a partir de tu descripción…');
+      setGenerationStatus(previous?'Diseñando los cambios y revisando la aplicación…':'Ampliando tu idea, diseñando los flujos y construyendo la aplicación…');
       const prior=previous?.spec.dashboard||null;
       if(previous&&!prior)throw new Error('Esta versión antigua no es un dashboard compatible. Exporta tu trabajo y reinicia el borrador antes de crear con el LLM.');
       const result=await llm.generate(orgId,prompt,prior,engines.kit,controller.signal,authorizedDataChanges);
@@ -106,7 +106,7 @@ export function useStudio(){
       checkAbort(controller.signal);setGenerationStatus('Preparando la vista previa…');await waitForGeneration(controller.signal);
       const html=generatedDocument(engines.kit.renderHTML(config),'azure-openai',model);
       checkAbort(controller.signal);if(revision!==sessionRevision.current)return;
-      const explanation=`Dashboard creado a partir de tu descripción: ${config.components.length} componentes validados. Revisa la vista previa y describe los cambios que necesites. Los datos son sintéticos y el HTML está aislado, sin conexión a la red.`;
+      const explanation=[result.brief?.summary||'Aplicación creada a partir de tu descripción.',`${config.components.length} bloques interactivos y de contenido validados.`,result.brief?.features.length?`Incluye: ${result.brief.features.join(' · ')}.`:'',result.brief?.assumptions.length?`Supuestos: ${result.brief.assumptions.join(' · ')}.`:'',result.brief?.limitations.length?`Límites: ${result.brief.limitations.join(' · ')}.`:'','Revisa la vista previa y describe los cambios que necesites. Datos sintéticos, sin conexión a la red. La edición de registros vive solo en la vista previa y se reinicia al recargar o exportar.'].filter(Boolean).join('\n\n').slice(0,4000);
       commit(addVersion(draftRef.current,{spec,html,provider:'azure-openai',model,createdAt:new Date().toISOString(),...(previous?{parentId:previous.id}:{})},explanation));
     }catch(generationError){
       if(revision!==sessionRevision.current)return;

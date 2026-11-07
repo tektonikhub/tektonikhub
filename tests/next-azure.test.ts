@@ -46,6 +46,8 @@ test('Azure validates generation input before charging or sending it to the prov
     assert.equal(azureGenerationSchema.safeParse({ orgId, prompt }).success, false);
   }
   assert.equal(azureGenerationSchema.safeParse({ orgId, prompt: 'ventas', endpoint: 'https://evil.invalid' }).success, false);
+  assert.equal(azureGenerationSchema.safeParse({ orgId, prompt: 'ventas', allowDataChanges: true }).success, true);
+  assert.equal(azureGenerationSchema.safeParse({ orgId, prompt: 'ventas', allowDataChanges: 'true' }).success, false);
 });
 test('Azure explains rejected request parameters without forwarding upstream messages', () => {
   for (const [param, expected] of [

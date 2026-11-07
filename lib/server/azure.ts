@@ -5,6 +5,7 @@ import dashboardKit from '@/lib/studio/runtime/dashboard-kit.js';
 import { record } from '@/lib/studio/draft';
 import type { LLMStatus } from '@/lib/studio/llm';
 import type { DashboardConfig } from '@/lib/studio/types';
+import { generateStudioApplication, STUDIO_GENERATION_TIMEOUT, type StudioCompletion } from '@/lib/studio/generation';
 import { authenticatedContext } from './auth';
 import { azureClearSchema, azureGenerationSchema, azureOrganizationSchema, azureRequestError, azureSaveSchema, azureTestSchema, normalizeAzureEndpoint } from './azure-policy';
 import { databaseError, errorResponse, HttpError, jsonResponse, readJson, sameOrigin } from './http';
@@ -135,22 +136,18 @@ function outputJSON(value: unknown): unknown {
   try { return JSON.parse(text.join('')); }
   catch { throw new HttpError(422, 'El modelo no devolvió configuración JSON válida. No se ha creado ninguna versión.'); }
 }
-async function callAzure(request: Request, settings: Credentials, apiKey: string, prompt: string | null, previous: DashboardConfig | null): Promise<unknown> {
-  const isTest = prompt === null;
-  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]);
+async function callAzure(settings: Credentials, apiKey: string, completion: Pick<StudioCompletion, 'instructions' | 'input' | 'maxOutputTokens'>, signal: AbortSignal): Promise<unknown> {
+  signal.throwIfAborted();
   let endpoint: string;
   try { endpoint = normalizeAzureEndpoint(settings.endpoint); }
   catch { throw new HttpError(503, 'El endpoint Azure guardado no es válido. Administración debe volver a guardarlo.'); }
-  const instructions = isTest ? 'Return only the JSON object {"ok":true}.'
-    : `You compose Tektonik hub dashboards. Return ONLY one JSON dashboard configuration conforming to the provided schema. Never return HTML, JavaScript, executable expressions, URLs, credentials or extra keys. Data must be synthetic, with at most 100 rows and 12 components. Interpret the user intent and preserve prior data and components unless explicitly asked to change them. Never claim external integrations or real data.\n${JSON.stringify(dashboardKit.context(prompt, previous))}`;
   try {
     const response = await fetch(endpoint, {
       method: 'POST', redirect: 'error', cache: 'no-store', signal,
       headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
       body: JSON.stringify({
-        model: settings.deployment, instructions,
-        input: isTest ? 'Return only the JSON object {"ok":true}.' : JSON.stringify({ request: prompt, previous, outputFormat: 'JSON' }),
-        text: { format: { type: 'json_object' } }, max_output_tokens: isTest ? 2048 : 8000, store: false,
+        model: settings.deployment, instructions: completion.instructions, input: completion.input,
+        text: { format: { type: 'json_object' } }, max_output_tokens: completion.maxOutputTokens, store: false,
       }),
     });
     if (!response.ok) {
@@ -185,7 +182,7 @@ async function callAzure(request: Request, settings: Credentials, apiKey: string
     throw new HttpError(502, 'No se pudo conectar con Azure. Revisa la conexión y la configuración del recurso.');
   }
 }
-async function generate(request: Request, context: Context, orgId: string, prompt: string | null, previous: DashboardConfig | null) {
+async function generate(request: Request, context: Context, orgId: string, prompt: string | null, previous: DashboardConfig | null, allowDataChanges = false) {
   const settings = await credentials(context, orgId);
   if (!settings) throw new HttpError(409, 'Configura Azure OpenAI en Admin → LLM Settings.');
   const apiKey = decrypt(settings, orgId);
@@ -196,12 +193,23 @@ async function generate(request: Request, context: Context, orgId: string, promp
   try {
     const current = await credentials(context, orgId);
     if (!current || current.version !== settings.version) throw new HttpError(409, 'La configuración cambió. Vuelve a intentar la generación.');
-    const output = await callAzure(request, settings, apiKey, prompt, previous);
+    // All design, composition and repair calls share the existing 65-second organization lease.
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(STUDIO_GENERATION_TIMEOUT)]);
     if (prompt === null) {
+      const output = await callAzure(settings, apiKey, { instructions: 'Return only the JSON object {"ok":true}.', input: 'Return only the JSON object {"ok":true}.', maxOutputTokens: 2048 }, signal);
       if (!record(output) || output.ok !== true || Object.keys(output).length !== 1) throw new HttpError(422, 'El modelo no completó la prueba JSON.');
       return jsonResponse({ ok: true, message: 'Conexión y JSON verificados con Azure Responses v1. La configuración está disponible para esta organización.' });
     }
-    return jsonResponse({ config: dashboard(output, true), provider: 'azure-openai', model: settings.deployment });
+    try {
+      const result = await generateStudioApplication(prompt, previous, dashboardKit,
+        completion => callAzure(settings, apiKey, completion, signal), allowDataChanges);
+      signal.throwIfAborted();
+      return jsonResponse({ ...result, provider: 'azure-openai', model: settings.deployment });
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      if (signal.aborted) throw new HttpError(504, 'Petición cancelada o tiempo de espera de Azure agotado.');
+      throw new HttpError(422, 'No se pudo completar una aplicación válida con el alcance diseñado. No se ha creado ninguna versión; la anterior se conserva.');
+    }
   } finally {
     await rpc(context, 'tk_azure_release', { p_org: orgId, p_lease: lease });
   }
@@ -253,6 +261,6 @@ export async function organizationAzure(request: Request, path: string): Promise
     const fields = azureGenerationSchema.parse(body);
     authorize(context, fields.orgId);
     const previous = fields.previous === undefined || fields.previous === null ? null : dashboard(fields.previous);
-    return await generate(request, context, fields.orgId, fields.prompt, previous);
+    return await generate(request, context, fields.orgId, fields.prompt, previous, fields.allowDataChanges);
   } catch (error) { return errorResponse(error); }
 }

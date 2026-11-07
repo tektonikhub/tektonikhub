@@ -37,6 +37,26 @@ test('dashboard JSON is normalized and rejects markup/code/extra fields',()=>{co
 test('explicit type selection cannot be displaced by words in first prompt',()=>{assert.equal(specForKind(engine,'calculadora de tendencias','dashboard',null).kind,'dashboard');assert.equal(specForKind(engine,'dashboard para tareas','form',null).kind,'form');assert.equal(specForKind(engine,'añade buscador','kanban',engine.createSpec('dashboard')).kind,'kanban');});
 test('dashboard followups preserve synthetic rows and declarative offline CSP',()=>{const config=kit.createConfig('ventas'),changed=kit.validate(kit.createConfig('tema oscuro y añade gráfico de líneas',config));assert.deepEqual(changed.data,config.data);const html=kit.renderHTML(changed);assert.match(html,/id="blk-dashboard-config"/);assert.match(html,/connect-src 'none'/);assert.match(OFFLINE_CSP,/default-src 'none'/);assert.ok(!html.includes('https://fonts.googleapis.com'));});
 test('Azure followups reject changed rows without explicit one-generation consent',()=>{const previous=kit.createConfig('ventas'),visual=kit.createConfig('tema oscuro',previous);assert.deepEqual(validateDashboardIteration(visual,previous,kit).data,previous.data);const changed={...visual,data:visual.data.map((row,index)=>({...row,value:row.value+(index===0?1:0)}))};assert.throws(()=>validateDashboardIteration(changed,previous,kit),/Autoriza explícitamente/);assert.deepEqual(validateDashboardIteration(changed,previous,kit,true).data,changed.data);assert.equal(previous.data[0].value,visual.data[0].value);assert.throws(()=>validateDashboardIteration({...changed,script:'evil'},previous,kit,true));});
+test('Azure client sends one-generation data consent and validates the product summary',async()=>{
+  const original=globalThis.fetch,previous=kit.createConfig('ventas');
+  const changed={...previous,data:previous.data.map((row,index)=>({...row,value:row.value+(index===0?1:0)}))};
+  const brief={summary:'Una app comercial más completa',features:['Oportunidades','Rendimiento'],limitations:['Sin CRM'],assumptions:['Datos sintéticos']};
+  const bodies:Record<string,unknown>[]=[];
+  try{
+    globalThis.fetch=async(input,options)=>{
+      if(String(input)==='/api/session')return Response.json({csrf:'a'.repeat(64)});
+      bodies.push(JSON.parse(String(options?.body)));
+      return Response.json({config:changed,provider:'azure-openai',model:'test-model',brief});
+    };
+    const result=await llm.generate('org','Cambia los datos',previous,kit,new AbortController().signal,true);
+    assert.deepEqual(result.brief,brief);
+    assert.equal(bodies[0].allowDataChanges,true);
+    await assert.rejects(llm.generate('org','Sin permiso',previous,kit,new AbortController().signal),/Autoriza explícitamente/);
+    assert.equal(bodies[1].allowDataChanges,undefined);
+    globalThis.fetch=async()=>Response.json({config:previous,provider:'azure-openai',model:'test-model',brief:{...brief,features:['x'.repeat(101)]}});
+    await assert.rejects(llm.generate('org','ventas',null,kit,new AbortController().signal),/Resumen de generación inválido/);
+  }finally{globalThis.fetch=original;}
+});
 test('cancel prevents incomplete versions and removes pending timers',async()=>{const draft=complete(),abort=new AbortController();const promise=waitForGeneration(abort.signal,10000);abort.abort();await assert.rejects(promise,{name:'AbortError'});assert.throws(()=>checkAbort(abort.signal),{name:'AbortError'});await assert.rejects(waitForGeneration(abort.signal),{name:'AbortError'});await waitForGeneration(new AbortController().signal,1);assert.equal(draft.versions.length,1);assert.equal(draft.selectedId,1);});
 test('cancel immediately releases a generation waiting on a shared CSRF request',async()=>{const abort=new AbortController(),pending=new Promise<string>(()=>{}),response=abortableResponse(pending,abort.signal);abort.abort();await assert.rejects(response,{name:'AbortError'});assert.equal(await abortableResponse(Promise.resolve('ready'),new AbortController().signal),'ready');await assert.rejects(abortableResponse(Promise.reject(new Error('failed')),new AbortController().signal),/failed/);});
 class MemoryStorage implements Storage { private data=new Map<string,string>();length=0;fail=false;clear(){this.data.clear();this.length=0;}getItem(key:string){if(this.fail)throw new Error('blocked');return this.data.get(key)??null;}key(index:number){return Array.from(this.data.keys())[index]??null;}removeItem(key:string){if(this.fail)throw new Error('blocked');this.data.delete(key);this.length=this.data.size;}setItem(key:string,value:string){if(this.fail)throw new Error('quota');this.data.set(key,value);this.length=this.data.size;}}

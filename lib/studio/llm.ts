@@ -54,8 +54,10 @@ export const llm={
   async test(orgId:string,signal?:AbortSignal){const result=await post('/api/llm/test',orgId,{},signal);if(!record(result)||result.ok!==true)throw new Error('No se verificó la conexión Azure.');return typeof result.message==='string'?result.message:'Conexión JSON verificada con Azure.';},
   async generate(orgId:string,prompt:string,previous:DashboardConfig|null,kit:Pick<DashboardKit,'validate'|'context'>,signal:AbortSignal,allowDataChanges=false){
     kit.context(prompt,previous);
-    const result=await post('/api/studio/generate',orgId,{prompt,previous},signal,true,GENERATION_HELP);
+    const result=await post('/api/studio/generate',orgId,{prompt,previous,...(allowDataChanges?{allowDataChanges:true}:{})},signal,true,GENERATION_HELP);
     if(!record(result)||result.provider!=='azure-openai'||typeof result.model!=='string'||result.model.length>128)throw new Error('Respuesta de generación inválida.');
-    return {config:validateDashboardIteration(result.config,previous,kit,allowDataChanges),model:result.model};
+    const brief=result.brief;
+    if(brief!==undefined&&(!record(brief)||typeof brief.summary!=='string'||brief.summary.length>500||!Array.isArray(brief.features)||brief.features.length>16||brief.features.some(title=>typeof title!=='string'||title.length>100)||!Array.isArray(brief.limitations)||brief.limitations.length>5||brief.limitations.some(text=>typeof text!=='string'||text.length>200)||!Array.isArray(brief.assumptions)||brief.assumptions.length>5||brief.assumptions.some(text=>typeof text!=='string'||text.length>200)))throw new Error('Resumen de generación inválido.');
+    return {config:validateDashboardIteration(result.config,previous,kit,allowDataChanges),model:result.model,brief:brief as {summary:string;features:string[];limitations:string[];assumptions:string[]}|undefined};
   }
 };
