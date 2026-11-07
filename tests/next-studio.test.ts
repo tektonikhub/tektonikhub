@@ -8,6 +8,7 @@ import { checkAbort, OFFLINE_CSP, parseDashboardJSON, specForKind, waitForGenera
 import { databaseSnapshot } from '../lib/studio/persistence-map';
 import { abortableResponse, llm, validateDashboardIteration } from '../lib/studio/llm';
 import { loadSubmissionSource } from '../lib/studio/source';
+import { htmlApplication } from './next-studio-html-fixture';
 import type { DashboardKit, StudioDraft, StudioEngine, StudioVersion } from '../lib/studio/types';
 const require=createRequire(import.meta.url);
 const kit:DashboardKit=require(resolve('lib','studio','runtime','dashboard-kit.js'));
@@ -37,24 +38,27 @@ test('dashboard JSON is normalized and rejects markup/code/extra fields',()=>{co
 test('explicit type selection cannot be displaced by words in first prompt',()=>{assert.equal(specForKind(engine,'calculadora de tendencias','dashboard',null).kind,'dashboard');assert.equal(specForKind(engine,'dashboard para tareas','form',null).kind,'form');assert.equal(specForKind(engine,'añade buscador','kanban',engine.createSpec('dashboard')).kind,'kanban');});
 test('dashboard followups preserve synthetic rows and declarative offline CSP',()=>{const config=kit.createConfig('ventas'),changed=kit.validate(kit.createConfig('tema oscuro y añade gráfico de líneas',config));assert.deepEqual(changed.data,config.data);const html=kit.renderHTML(changed);assert.match(html,/id="blk-dashboard-config"/);assert.match(html,/connect-src 'none'/);assert.match(OFFLINE_CSP,/default-src 'none'/);assert.ok(!html.includes('https://fonts.googleapis.com'));});
 test('Azure followups reject changed rows without explicit one-generation consent',()=>{const previous=kit.createConfig('ventas'),visual=kit.createConfig('tema oscuro',previous);assert.deepEqual(validateDashboardIteration(visual,previous,kit).data,previous.data);const changed={...visual,data:visual.data.map((row,index)=>({...row,value:row.value+(index===0?1:0)}))};assert.throws(()=>validateDashboardIteration(changed,previous,kit),/Autoriza explícitamente/);assert.deepEqual(validateDashboardIteration(changed,previous,kit,true).data,changed.data);assert.equal(previous.data[0].value,visual.data[0].value);assert.throws(()=>validateDashboardIteration({...changed,script:'evil'},previous,kit,true));});
-test('Azure client sends one-generation data consent and validates the product summary',async()=>{
-  const original=globalThis.fetch,previous=kit.createConfig('ventas');
-  const changed={...previous,data:previous.data.map((row,index)=>({...row,value:row.value+(index===0?1:0)}))};
-  const brief={summary:'Una app comercial más completa',features:['Oportunidades','Rendimiento'],limitations:['Sin CRM'],assumptions:['Datos sintéticos']};
+test('Azure client carries prior HTML and validates functional app metadata and summary',async()=>{
+  const original=globalThis.fetch;
+  const brief={summary:'Presupuesto por destino',features:htmlApplication.features,limitations:htmlApplication.limitations,assumptions:['El usuario introduce los costes']};
   const bodies:Record<string,unknown>[]=[];
   try{
     globalThis.fetch=async(input,options)=>{
       if(String(input)==='/api/session')return Response.json({csrf:'a'.repeat(64)});
       bodies.push(JSON.parse(String(options?.body)));
-      return Response.json({config:changed,provider:'azure-openai',model:'test-model',brief});
+      return Response.json({application:htmlApplication,provider:'azure-openai',model:'test-model',brief});
     };
-    const result=await llm.generate('org','Cambia los datos',previous,kit,new AbortController().signal,true);
+    const result=await llm.generate('org','Añade campos de presupuesto',htmlApplication,kit,new AbortController().signal);
     assert.deepEqual(result.brief,brief);
-    assert.equal(bodies[0].allowDataChanges,true);
-    await assert.rejects(llm.generate('org','Sin permiso',previous,kit,new AbortController().signal),/Autoriza explícitamente/);
-    assert.equal(bodies[1].allowDataChanges,undefined);
-    globalThis.fetch=async()=>Response.json({config:previous,provider:'azure-openai',model:'test-model',brief:{...brief,features:['x'.repeat(101)]}});
-    await assert.rejects(llm.generate('org','ventas',null,kit,new AbortController().signal),/Resumen de generación inválido/);
+    assert.deepEqual(result.application,htmlApplication);
+    assert.deepEqual(bodies[0].previous,htmlApplication);
+    assert.equal(bodies[0].allowDataChanges,undefined);
+    globalThis.fetch=async()=>Response.json({application:htmlApplication,provider:'azure-openai',model:'test-model',brief:{...brief,features:['x'.repeat(101)]}});
+    await assert.rejects(llm.generate('org','viajes',null,kit,new AbortController().signal),/Resumen de generación inválido/);
+    globalThis.fetch=async()=>Response.json({application:{...htmlApplication,html:'<div>No funciona</div>'},provider:'azure-openai',model:'test-model'});
+    await assert.rejects(llm.generate('org','viajes',null,kit,new AbortController().signal),/complete HTML/);
+    globalThis.fetch=async()=>Response.json({application:{...htmlApplication,features:[]},provider:'azure-openai',model:'test-model'});
+    await assert.rejects(llm.generate('org','viajes',null,kit,new AbortController().signal));
   }finally{globalThis.fetch=original;}
 });
 test('cancel prevents incomplete versions and removes pending timers',async()=>{const draft=complete(),abort=new AbortController();const promise=waitForGeneration(abort.signal,10000);abort.abort();await assert.rejects(promise,{name:'AbortError'});assert.throws(()=>checkAbort(abort.signal),{name:'AbortError'});await assert.rejects(waitForGeneration(abort.signal),{name:'AbortError'});await waitForGeneration(new AbortController().signal,1);assert.equal(draft.versions.length,1);assert.equal(draft.selectedId,1);});
@@ -62,7 +66,7 @@ test('cancel immediately releases a generation waiting on a shared CSRF request'
 class MemoryStorage implements Storage { private data=new Map<string,string>();length=0;fail=false;clear(){this.data.clear();this.length=0;}getItem(key:string){if(this.fail)throw new Error('blocked');return this.data.get(key)??null;}key(index:number){return Array.from(this.data.keys())[index]??null;}removeItem(key:string){if(this.fail)throw new Error('blocked');this.data.delete(key);this.length=this.data.size;}setItem(key:string,value:string){if(this.fail)throw new Error('quota');this.data.set(key,value);this.length=this.data.size;}}
 test('persistence propagates corruption/quota/removal failures and does not silently reset',async()=>{const prior=Object.getOwnPropertyDescriptor(globalThis,'localStorage'),storage=new MemoryStorage();Object.defineProperty(globalThis,'localStorage',{configurable:true,value:storage});try{const scope={orgId:'org',userId:'user'},adapter=localPersistence(kit);assert.equal(await adapter.load(scope),null);await adapter.save(scope,complete());assert.equal((await adapter.load(scope))?.selectedId,1);storage.setItem(draftKey(scope),'{broken');await assert.rejects(adapter.load(scope));assert.equal(storage.getItem(draftKey(scope)),'{broken');storage.fail=true;await assert.rejects(adapter.save(scope,blankDraft()));await assert.rejects(adapter.remove(scope));storage.fail=false;assert.equal(storage.getItem(draftKey(scope)),'{broken');await adapter.remove(scope);assert.equal(await adapter.load(scope),null);}finally{if(prior)Object.defineProperty(globalThis,'localStorage',prior);else Reflect.deleteProperty(globalThis,'localStorage');}});
 test('database map uses exact PostgreSQL columns and distinguishes ticket version from Studio version',()=>{const draft=complete();draft.submission={id:'legacy-app',ticket:'APP-1',versionId:1};const snapshot=databaseSnapshot({orgId:'legacy-org',userId:'legacy-user'},draft,{projectId:'uuid-project',orgId:'uuid-org',ownerId:'uuid-user',revision:2,createdAt:'2026-10-25T09:00:00Z',submittedAppId:'uuid-app',submittedAppVersion:4});assert.equal(snapshot.project.submitted_version,4);assert.equal(snapshot.project.current_version,1);assert.equal(snapshot.versions[0].version,1);assert.equal(snapshot.versions[0].engine,'demo');assert.equal(snapshot.messages[0].body,'Primera versión sintética.');assert.throws(()=>databaseSnapshot({orgId:'o',userId:'u'},draft,{projectId:'p',orgId:'o',ownerId:'u',revision:1,createdAt:'date',submittedAppId:'app'}));});
-test('workspace is native React; only isolated generated preview uses iframe',()=>{const source=readFileSync(resolve('components','studio','studio-workspace.tsx'),'utf8');assert.match(source,/sandbox="allow-scripts"/);assert.match(source,/srcDoc=\{source\}/);assert.ok(!source.includes('allow-same-origin'));assert.ok(!source.includes('dangerouslySetInnerHTML'));assert.ok(!source.includes('create-app.html'));});
+test('workspace uses the shared isolated frame with raw HTML and private stable app state',()=>{const source=readFileSync(resolve('components','studio','studio-workspace.tsx'),'utf8');assert.match(source,/<GeneratedAppFrame/);assert.match(source,/html=\{current\.html\}/);assert.match(source,/localKey=\{appStateKey\}/);assert.match(source,/studio\.blk\.org\?\.id/);assert.match(source,/studio\.blk\.user\?\.id/);assert.match(source,/current\.spec\.runtimeId\|\|current\.createdAt/);assert.ok(!source.includes('allow-same-origin'));assert.ok(!source.includes('dangerouslySetInnerHTML'));assert.ok(!source.includes('create-app.html'));assert.ok(!source.includes('studio.isolatedHTML'));});
 test('Studio starts from a description without provider controls or project activity',()=>{
   const workspace=readFileSync(resolve('components','studio','studio-workspace.tsx'),'utf8');
   for(const removed of ['generationMode','studio.provider','Azure','Motor','Demo local','Actividad del proyecto','studio-history','Mis proyectos'])assert.ok(!workspace.includes(removed),removed);
@@ -160,4 +164,34 @@ test('submission source is a bounded no-store read tied to the exact ticket vers
   await assert.rejects(loadSubmissionSource(app,async()=>Response.json({error:'Version conflict'},{status:409})),/Version conflict/);
   await assert.rejects(loadSubmissionSource(app,async()=>{throw new Error('Offline');}),/No se confirmó/);
 });
-test('Azure client uses authenticated CSRF protocol, preserves server errors and never silently falls back',async()=>{const original=globalThis.fetch;const calls:{url:string;options?:RequestInit}[]=[];globalThis.fetch=async(input:RequestInfo|URL,options?:RequestInit)=>{const url=String(input);calls.push({url,options});if(url==='/api/session')return Response.json({csrf:'a'.repeat(64)});if(url==='/api/studio/generate')return Response.json({config:kit.createConfig('ventas'),provider:'azure-openai',model:'test-deployment'});return Response.json({error:'Falta la clave de cifrado de la organización.'},{status:503});};try{const generated=await llm.generate('org','ventas',null,kit,new AbortController().signal);assert.equal(generated.model,'test-deployment');const call=calls.find(c=>c.url==='/api/studio/generate');assert.equal(new Headers(call?.options?.headers).get('X-BLK-CSRF'),'a'.repeat(64));assert.deepEqual(JSON.parse(String(call?.options?.body)),{prompt:'ventas',previous:null,orgId:'org'});assert.equal(call?.options?.credentials,'same-origin');await assert.rejects(llm.status('org'),/Falta la clave de cifrado/);const abort=new AbortController();abort.abort();await assert.rejects(llm.generate('org','ventas',null,kit,abort.signal),{name:'AbortError'});}finally{globalThis.fetch=original;}});
+test('Azure client uses authenticated CSRF protocol, preserves server errors and never silently falls back',async()=>{const original=globalThis.fetch;const calls:{url:string;options?:RequestInit}[]=[];globalThis.fetch=async(input:RequestInfo|URL,options?:RequestInit)=>{const url=String(input);calls.push({url,options});if(url==='/api/session')return Response.json({csrf:'a'.repeat(64)});if(url==='/api/studio/generate')return Response.json({application:htmlApplication,provider:'azure-openai',model:'test-deployment'});return Response.json({error:'Falta la clave de cifrado de la organización.'},{status:503});};try{const generated=await llm.generate('org','ventas',null,kit,new AbortController().signal);assert.equal(generated.model,'test-deployment');const call=calls.find(c=>c.url==='/api/studio/generate');assert.equal(new Headers(call?.options?.headers).get('X-BLK-CSRF'),'a'.repeat(64));assert.deepEqual(JSON.parse(String(call?.options?.body)),{prompt:'ventas',previous:null,orgId:'org'});assert.equal(call?.options?.credentials,'same-origin');await assert.rejects(llm.status('org'),/Falta la clave de cifrado/);const abort=new AbortController();abort.abort();await assert.rejects(llm.generate('org','ventas',null,kit,abort.signal),{name:'AbortError'});}finally{globalThis.fetch=original;}});
+
+test('arbitrary HTML drafts roundtrip and branches preserve metadata, document and runtime identity',()=>{
+  const {html,...htmlApp}=htmlApplication;
+  const runtimeId='00000000-0000-4000-8000-000000000999';
+  const spec={kind:'dashboard' as const,title:htmlApp.title,description:htmlApp.description,accent:htmlApp.theme.accent,dark:htmlApp.theme.dark,compact:false,chart:false,search:false,area:'operaciones',format:'html' as const,htmlApp,runtimeId};
+  const draft=addVersion(blankDraft(),{spec,html,provider:'azure-openai',createdAt:'2026-11-07T12:00:00Z'},'Aplicación de presupuesto');
+  const restored=parseDraft(JSON.stringify(draft),kit);
+  assert.deepEqual(restored,draft);
+  const branch=parseDraft(JSON.stringify(branchVersion(restored,1)),kit);
+  assert.equal(branch.versions[1].spec.runtimeId,runtimeId);
+  assert.deepEqual(branch.versions[1].spec.htmlApp,htmlApp);
+  assert.equal(branch.versions[1].html,html);
+  assert.equal(branch.versions[1].spec.dashboard,undefined);
+  const snapshot=databaseSnapshot({orgId:'o',userId:'u'},draft,{projectId:'p',orgId:'o',ownerId:'u',revision:1,createdAt:'2026-11-07T12:00:00Z'});
+  assert.equal(snapshot.versions[0].dashboard_config,null);
+  assert.deepEqual(snapshot.versions[0].spec,spec);
+  for(const changes of [{runtimeId:'../other-app'},{format:'script'},{htmlApp:undefined},{dashboard:kit.createConfig('ventas')},{htmlApp:{...htmlApp,features:[]}}])assert.throws(()=>parseDraft(JSON.stringify({...draft,versions:[{...draft.versions[0],spec:{...spec,...changes}}]}),kit));
+  assert.throws(()=>parseDraft(JSON.stringify({...draft,versions:[{...draft.versions[0],html:html.replace('</head>','<script src="https://evil.invalid"></script></head>')}]}),kit));
+  assert.throws(()=>parseDraft(JSON.stringify({...draft,versions:[{...draft.versions[0],html:html.replace('</body>','é'.repeat(100_001)+'</body>')}]}),kit));
+});
+test('Studio visible copy describes functioning controls and private persistence without misleading sample claims',()=>{
+  const workspace=readFileSync(resolve('components','studio','studio-workspace.tsx'),'utf8');
+  const hook=readFileSync(resolve('hooks','use-studio.ts'),'utf8');
+  for(const text of ['Sandbox offline','datos ficticios','datos sintéticos','prototipo','se reinician al recargar'])assert.ok(!workspace.includes(text)&&!hook.includes(text),text);
+  assert.match(workspace,/Enviar aplicación a IT/);
+  assert.match(workspace,/estado privado/i);
+  assert.match(hook,/runtimeId:previous\?\.spec\.runtimeId\|\|crypto\.randomUUID\(\)/);
+  assert.match(hook,/htmlApp/);
+  assert.match(hook,/const html=generatedDocument\(sourceHTML/);
+});

@@ -8,7 +8,7 @@ import { useBLK } from '@/hooks/use-blk';
 import { Button } from '@/components/ui/button';
 import { applicationHref, loadApplicationSource } from '@/lib/data/app-access';
 import { approvedCatalogApps } from '@/lib/data/mi-flow';
-import { isolatedHTML } from '@/lib/studio/engines';
+import { GeneratedAppFrame } from '@/components/studio/generated-app-frame';
 import type { App } from '@/lib/domain/types';
 
 export function ApplicationView({ appId }: { appId: string }) {
@@ -33,7 +33,7 @@ function ApplicationPreview({ app }: { app: App }) {
   useEffect(() => {
     let active = true;
     void loadApplicationSource({ id, version }).then(html => {
-      if (active) setState({ status: 'ready', html: isolatedHTML(html) });
+      if (active) setState({ status: 'ready', html });
     }).catch(error => {
       if (active) setState({ status: 'error', message: error instanceof Error ? error.message : 'No se pudo abrir la aplicación.' });
     });
@@ -43,5 +43,5 @@ function ApplicationPreview({ app }: { app: App }) {
   if (state.status === 'error') return <div className="application-message application-error" role="alert">
     <p>{state.message}</p><Button onClick={() => window.location.reload()}>Reintentar</Button>
   </div>;
-  return <iframe className="application-frame" title={`Aplicación ${app.title}`} sandbox="allow-scripts allow-downloads" srcDoc={state.html} referrerPolicy="no-referrer" />;
+  return <GeneratedAppFrame className="application-frame" title={`Aplicación ${app.title}`} html={state.html} appId={id} version={version} />;
 }

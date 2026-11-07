@@ -1,6 +1,7 @@
 import { record } from './draft';
 import { GENERATION_STREAM_TYPE, readGenerationStream, type GenerationProgress } from './generation-stream';
 import type { DashboardConfig, DashboardKit } from './types';
+import { validateHTMLApplication, type PreviousStudioApplication } from './html-generation';
 export interface LLMStatus { available: boolean; configured: boolean; endpoint: string; deployment: string; apiVersion: string; version: number; storage: 'insforge' }
 export interface LLMFields { endpoint: string; deployment: string; apiKey: string; version: number }
 const SETTINGS_HELP = 'No se pudo comprobar la configuración Azure de tu organización. Vuelve a intentarlo o contacta con IT.';
@@ -45,7 +46,7 @@ export function validateDashboardIteration(input:unknown,previous:DashboardConfi
     const same=config.data.length===previous.data.length&&config.data.every((row,index)=>{
       const prior=previous.data[index];return row.date===prior.date&&row.category===prior.category&&row.label===prior.label&&row.value===prior.value&&row.status===prior.status;
     });
-    if(!same)throw new Error('La generación intentó cambiar los datos existentes. Autoriza explícitamente el cambio de datos sintéticos y vuelve a solicitarlo, o pide conservarlos.');
+    if(!same)throw new Error('La generación intentó cambiar los datos existentes. Autoriza explícitamente el cambio de datos y vuelve a solicitarlo, o pide conservarlos.');
   }
   return config;
 }
@@ -54,12 +55,12 @@ export const llm={
   async save(orgId:string,fields:LLMFields,signal?:AbortSignal){return status(await post('/api/llm/settings',orgId,{...fields},signal));},
   async clear(orgId:string,version:number,signal?:AbortSignal){return status(await post('/api/llm/clear',orgId,{version},signal));},
   async test(orgId:string,signal?:AbortSignal){const result=await post('/api/llm/test',orgId,{},signal);if(!record(result)||result.ok!==true)throw new Error('No se verificó la conexión Azure.');return typeof result.message==='string'?result.message:'Conexión JSON verificada con Azure.';},
-  async generate(orgId:string,prompt:string,previous:DashboardConfig|null,kit:Pick<DashboardKit,'validate'|'context'>,signal:AbortSignal,allowDataChanges=false,onProgress?:(progress:GenerationProgress)=>void){
-    kit.context(prompt,previous);
-    const result=await post('/api/studio/generate',orgId,{prompt,previous,...(allowDataChanges?{allowDataChanges:true}:{})},signal,true,GENERATION_HELP,onProgress);
+  async generate(orgId:string,prompt:string,previous:PreviousStudioApplication|null,kit:Pick<DashboardKit,'validate'|'context'>,signal:AbortSignal,allowDataChanges=false,onProgress?:(progress:GenerationProgress)=>void){
+    const prior = previous && 'format' in previous ? validateHTMLApplication(previous) : previous ? kit.validate(previous) : null;
+    const result=await post('/api/studio/generate',orgId,{prompt,previous:prior,...(allowDataChanges?{allowDataChanges:true}:{})},signal,true,GENERATION_HELP,onProgress);
     if(!record(result)||result.provider!=='azure-openai'||typeof result.model!=='string'||result.model.length>128)throw new Error('Respuesta de generación inválida.');
     const brief=result.brief;
     if(brief!==undefined&&(!record(brief)||typeof brief.summary!=='string'||brief.summary.length>500||!Array.isArray(brief.features)||brief.features.length>16||brief.features.some(title=>typeof title!=='string'||title.length>100)||!Array.isArray(brief.limitations)||brief.limitations.length>5||brief.limitations.some(text=>typeof text!=='string'||text.length>200)||!Array.isArray(brief.assumptions)||brief.assumptions.length>5||brief.assumptions.some(text=>typeof text!=='string'||text.length>200)))throw new Error('Resumen de generación inválido.');
-    return {config:validateDashboardIteration(result.config,previous,kit,allowDataChanges),model:result.model,brief:brief as {summary:string;features:string[];limitations:string[];assumptions:string[]}|undefined};
+    return {application:validateHTMLApplication(result.application),model:result.model,brief:brief as {summary:string;features:string[];limitations:string[];assumptions:string[]}|undefined};
   }
 };

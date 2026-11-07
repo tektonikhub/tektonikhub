@@ -5,7 +5,8 @@ const path = require('node:path');
 const { randomBytes, createHmac } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
-const kit = require('../lib/studio/runtime/dashboard-kit.js');
+require('tsx/cjs');
+const { htmlApplication, htmlBrief } = require('./next-studio-html-fixture.ts');
 const root = path.resolve(__dirname, '..');
 const endpoint = 'https://myviarapida-resource.services.ai.azure.com/openai/v1/responses';
 const otherEndpoint = 'https://second-test.openai.azure.com/openai/v1/responses';
@@ -17,8 +18,11 @@ const fakeKey = 'synthetic-azure-not-a-real-key';
 const fakeOtherKey = 'synthetic-other-organization-key';
 const adoptionPrompt = 'crea un diagrama de fases detallando La adopción de la inteligencia artificial en una compañía Primera fase tiene que tener Lo fundamentales La segunda tiene que Cumplir la creación de un primer agente La ter Tiene que explicar el concepto de cowork Donde la IA ejecuta y no sólo asiste Para cada una de las 3 fases Tiene que haber más checklist Aspectos que el usuario tiene que tener en cuenta y que quiere que poder ir marcando Las 3 grandes fases tienes que estar bien delimitadas A modo de workflow';
 const phaseTitles = ['Fundamentos de IA', 'Creación del primer agente', 'Cowork: la IA ejecuta con supervisión'];
-const workflowConfig = kit.validate({ ...kit.createConfig('ventas'), title: 'Adopción de inteligencia artificial', data: [], components: [{ id: 'adoption', type: 'workflow', title: 'Workflow de adopción', span: 12, phases: phaseTitles.map((title, index) => ({ id: 'phase' + index, title, description: 'Objetivo y criterios de salida de esta fase.', items: ['Definir objetivos y responsable', 'Revisar privacidad y permisos', 'Validar resultados antes de avanzar'].map((label, item) => ({ id: `check${index}_${item}`, label, checked: false, detail: 'Revisión supervisada por la compañía.' })) })) }] });
-const workflowBrief = { scope: 'focused', audience: 'Equipo de adopción de IA', summary: 'Tres fases conectadas con checklists para adoptar IA.', workflows: phaseTitles, features: [{ type: 'workflow', title: 'Workflow de adopción', purpose: 'Checklist independiente por fase y progreso.', phaseTitles }], design: { accent: '#60A5FA', dark: false }, assumptions: ['Checklist de práctica en memoria.'], limitations: ['Sin persistencia ni conexión a la red.'], acceptanceCriteria: ['Tres fases con títulos exactos y checklists interactivos.'] };
+const workflowApplication = {
+  ...htmlApplication, title: 'Adopción de inteligencia artificial', description: 'Tres fases conectadas con checklists persistentes.', features: phaseTitles, limitations: ['Sin conexión a servicios externos'],
+  html: '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Adopción de IA</title><style>body{font:16px system-ui;padding:20px}section{padding:20px;border:1px solid #ccc}label{display:block}</style></head><body><h1>Adopción de inteligencia artificial</h1><label>Nombre del proyecto<input id="projectName" type="text"></label>' + phaseTitles.map((title,index)=>'<section><h2>'+title+'</h2>'+['Definir objetivos y responsable','Revisar privacidad y permisos','Validar resultados antes de avanzar'].map((label,item)=>'<label><input type="checkbox" id="check'+index+'_'+item+'">'+label+'</label>').join('')+'</section>').join('')+'<p id="notice" role="status"></p><script>const KEY="ai-adoption:v1";let state={};try{state=JSON.parse(localStorage.getItem(KEY)||"{}");}catch{document.getElementById("notice").textContent="No se pudo recuperar el estado.";}const project=document.getElementById("projectName");project.value=typeof state.project==="string"?state.project:"";project.addEventListener("input",()=>{state.project=project.value;try{localStorage.setItem(KEY,JSON.stringify(state));}catch{document.getElementById("notice").textContent="No se pudo guardar el estado.";}});document.querySelectorAll("input[type=checkbox]").forEach(check=>{check.checked=state[check.id]===true;check.addEventListener("change",()=>{state[check.id]=check.checked;try{localStorage.setItem(KEY,JSON.stringify(state));}catch{document.getElementById("notice").textContent="No se pudo guardar el estado.";}});});</script></body></html>',
+};
+const workflowBrief = { ...htmlBrief, audience: 'Equipo de adopción de IA', summary: workflowApplication.description, workflows: phaseTitles, features: [{ type: 'adoption-checklist', title: 'Workflow de adopción', purpose: 'Tres fases delimitadas con checklists independientes y progreso persistente.' }], acceptanceCriteria: ['Tres fases con títulos exactos y checklists interactivos.'] };
 const roles = ['admin', 'developer', 'catalog', 'superadmin', 'otheradmin'];
 const accounts = roles.map((role, index) => ({
   role: role === 'otheradmin' ? 'admin' : role, enabled: true, verified: true,
@@ -151,7 +155,7 @@ const backend = http.createServer(async (request, response) => {
       if (mode === 'error-not-json') { response.writeHead(400, { 'Content-Type': 'text/html' }); response.end(fakeKey); return; }
       if (mode === 'error-too-large') return send(response, 400, { error: { message: fakeKey }, padding: 'x'.repeat(17000) });
       if (mode === 'not-json') { response.writeHead(200, { 'Content-Type': 'text/html' }); response.end('<html>Not JSON</html>'); return; }
-      if (mode === 'too-large') return send(response, 200, { padding: 'x'.repeat(250000) });
+      if (mode === 'too-large') return send(response, 200, { padding: 'x'.repeat(2_600_001) });
       if (mode === 'incomplete') return send(response, 200, { ...completed({}), status: 'incomplete' });
       if (mode === 'refusal') return send(response, 200, { status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'No' }] }] });
       if (mode === 'invalid-json') return send(response, 200, { status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'not JSON' }] }] });
@@ -162,21 +166,13 @@ const backend = http.createServer(async (request, response) => {
       if (input.mode) {
         assert.match(body.instructions, /BEFORE implementation/);
         if (mode === 'workflow') { assert.equal(input.request, adoptionPrompt); return send(response, 200, completed(workflowBrief)); }
-        const sample = kit.createConfig(input.request);
-        return send(response, 200, completed({
-          summary: 'Aplicación comercial con exploración y seguimiento.', audience: 'Equipo comercial', scope: input.mode === 'iteration' ? 'focused' : 'full',
-          workflows: ['Explorar registros y revisar tendencias'],
-          features: sample.components.map(component => ({ type: component.type, title: component.title, purpose: 'Revisar el rendimiento' })),
-          design: { accent: '#60A5FA', dark: false }, assumptions: ['Datos sintéticos'],
-          acceptanceCriteria: ['Los filtros actualizan las vistas'], limitations: ['Sin CRM externo'],
-        }));
+        return send(response, 200, completed({ ...htmlBrief, scope: input.mode === 'iteration' ? 'focused' : 'full' }));
       }
-      assert.ok(body.instructions.includes('"schema"'));
+      assert.ok(body.instructions.includes('"properties"'));
       assert.equal(body.max_output_tokens, 16000);
-      if (mode === 'workflow') assert.deepEqual(input.expandedBrief.features[0].phaseTitles, phaseTitles);
-      else assert.ok(input.expandedBrief.features.length >= 6);
+      assert.ok(input.expandedBrief.features.length >= 1);
       if (mode === 'delayed-compose') await wait(65_000);
-      return send(response, 200, completed(mode === 'workflow' ? workflowConfig : kit.createConfig(input.request, input.previous)));
+      return send(response, 200, completed(mode === 'workflow' ? workflowApplication : { ...htmlApplication, theme: { ...htmlApplication.theme, dark: /oscuro/i.test(input.request) } }));
     }
     throw new Error(`Unexpected synthetic endpoint ${request.method} ${url.pathname}`);
   } catch (error) {
@@ -313,11 +309,11 @@ async function main() {
     assert.equal(response.status, 200, await response.clone().text());
     const generated = await response.json();
     assert.equal(generated.provider, 'azure-openai'); assert.equal(generated.model, fields.deployment);
-    assert.equal(kit.validate(generated.config).template, 'sales'); assert.ok(!JSON.stringify(generated).includes(fakeKey));
-    response = await post('/api/studio/generate', { orgId, prompt: 'Ponlo en modo oscuro', previous: generated.config }, 'developer');
+    assert.equal(generated.application.format, 'html'); assert.match(generated.application.html, /localStorage/); assert.ok(!JSON.stringify(generated).includes(fakeKey));
+    response = await post('/api/studio/generate', { orgId, prompt: 'Ponlo en modo oscuro', previous: generated.application }, 'developer');
     assert.equal(response.status, 200);
     const iteration = await response.json();
-    assert.equal(iteration.config.theme.dark, true); assert.deepEqual(iteration.config.data, generated.config.data);
+    assert.equal(iteration.application.theme.dark, true); assert.equal(iteration.application.html, generated.application.html);
     assert.equal((await post('/api/studio/generate', { orgId, prompt: 'ventas', previous: { script: 'evil' } }, 'developer')).status, 400);
     console.log('PASS: Admin UI saves encrypted credentials to InsForge, reloads metadata without keys and users generate validated Azure Responses JSON');
     mode = 'workflow'; settings.get(orgId).calls = 0;
@@ -330,18 +326,26 @@ async function main() {
       await page.getByLabel('Describe tu primera idea').fill(adoptionPrompt);
       await page.getByRole('button', { name: 'Generar herramienta', exact: true }).click();
       await page.getByRole('button', { name: 'Abrir v1', exact: true }).waitFor();
-      const preview = page.frameLocator('#previewFrame');
+      const preview = page.frameLocator('.studio-preview-stage iframe');
       for (const title of phaseTitles) await preview.getByRole('heading', { name: title, exact: true }).waitFor();
       const checks = preview.getByRole('checkbox');
       assert.equal(await checks.count(), 9);
+      await preview.getByLabel('Nombre del proyecto', { exact: true }).fill('Adopción del equipo');
       await checks.first().check();
       assert.equal(await checks.first().isChecked(), true);
       assert.equal(await checks.nth(3).isChecked(), false);
       assert.ok((await page.locator('#chatLog').innerText()).includes(adoptionPrompt));
       assert.doesNotMatch(await page.locator('#chatLog').innerText(), /No se creó ninguna versión/);
+      await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('tektonik:studio-state:') && localStorage.getItem(key).includes('Adopción del equipo')));
+      await page.reload();
+      await page.getByRole('button', { name: 'Abrir v1', exact: true }).waitFor();
+      await preview.getByRole('heading', { name: phaseTitles[0], exact: true }).waitFor();
+      assert.equal(await preview.getByLabel('Nombre del proyecto', { exact: true }).inputValue(), 'Adopción del equipo');
+      assert.equal(await checks.first().isChecked(), true);
+      assert.equal(await checks.nth(3).isChecked(), false);
     } finally { await studioContext.close(); }
     mode = 'valid';
-    console.log('PASS: exact Spanish adoption prompt flows through the real Studio client, NDJSON API, validated three-phase workflow and interactive sandbox checklists');
+    console.log('PASS: exact Spanish adoption prompt flows through the real Studio client, NDJSON API, validated self-contained three-phase workflow and persistent interactive checklists');
     await restart({ BLK_ENABLE_LOCAL_LLM: 'true' });
     response = await get('/api/llm/settings?orgId=' + orgId, 'admin');
     assert.equal((await response.json()).version, 1);
@@ -385,7 +389,7 @@ async function main() {
     assert.deepEqual(longEvents.filter(event => event.type === 'progress').map(event => event.stage), ['expand', 'compose', 'validate']);
     assert.equal(longEvents.filter(event => event.type === 'result').length, 1);
     assert.equal(longEvents.some(event => event.type === 'error'), false);
-    assert.equal(kit.validate(longEvents.find(event => event.type === 'result').result.config).template, 'sales');
+    assert.equal(longEvents.find(event => event.type === 'result').result.application.format, 'html');
     assert.equal(azureCalls, longCalls + 2);
     assert.equal(settings.get(orgId).lease, null);
     assert.ok(!longText.includes(fakeKey));
@@ -432,7 +436,7 @@ async function main() {
       const body = await response.json();
       if (expectedError) assert.match(body.error, expectedError);
       assert.equal(azureCalls, callsBefore + 1, 'Rejected requests must not be retried or silently downgrade JSON mode');
-      assert.equal(body.config, undefined); assert.ok(!JSON.stringify(body).includes(fakeKey)); assert.equal(settings.get(orgId).lease, null);
+      assert.equal(body.application, undefined); assert.ok(!JSON.stringify(body).includes(fakeKey)); assert.equal(settings.get(orgId).lease, null);
       if (['incomplete', 'bad-input'].includes(nextMode)) {
         response = await post('/api/studio/generate', { orgId, prompt: 'ventas' }, 'developer', { headers: { Accept: 'application/x-ndjson' } });
         assert.equal(response.status, 200);

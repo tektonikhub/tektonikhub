@@ -11,7 +11,7 @@ export type DashboardComponent = DashboardComponentProperties & (
   | { type: 'workflow'; phases: DashboardWorkflowPhase[] }
 );
 export interface DashboardConfig { version: 1; title: string; description: string; theme: { dark: boolean; accent: string }; template: 'sales' | 'operations' | 'projects'; data: DashboardRow[]; components: DashboardComponent[] }
-export interface StudioSpec { kind: StudioKind; title: string; description: string; accent: string; dark: boolean; compact: boolean; chart: boolean; search: boolean; area: string; dashboard?: DashboardConfig }
+export interface StudioSpec { kind: StudioKind; title: string; description: string; accent: string; dark: boolean; compact: boolean; chart: boolean; search: boolean; area: string; dashboard?: DashboardConfig; format?: 'html'; htmlApp?: import('./html-generation').HTMLAppMetadata; runtimeId?: string }
 export interface StudioEngine { createSpec(prompt: string, previous?: StudioSpec | null): StudioSpec; renderHTML(spec: StudioSpec): string; explainChanges(previous: StudioSpec | null, spec: StudioSpec): string }
 export interface DashboardKit { createConfig(prompt: string, previous?: DashboardConfig | null): DashboardConfig; validate(input: unknown): DashboardConfig; renderHTML(input: DashboardConfig): string; context(prompt: string, previous?: DashboardConfig | null): { schema: JSONData; components: JSONData; templates: JSONData; previousConfig: DashboardConfig | null; guidance: string[] }; templates: Record<'sales' | 'operations' | 'projects', DashboardConfig>; registry: Record<string, JSONData>; schema: JSONData }
 export interface StudioVersion { id: number; spec: StudioSpec; html: string; provider: Provider; model?: string; createdAt: string; parentId?: number }

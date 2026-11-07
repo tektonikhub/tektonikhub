@@ -135,7 +135,8 @@ test('offline HTML has strict CSP, stable selectors, escaped text and parseable 
   assert.equal((html.match(/id="blk-dashboard-config"/g) || []).length, 1);
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   assert.doesNotThrow(() => new vm.Script(script));
-  assert.doesNotMatch(script, /\b(?:fetch|XMLHttpRequest|eval|localStorage)\b|\.innerHTML\s*=/);
+  assert.doesNotMatch(script, /\b(?:fetch|XMLHttpRequest|eval)\b|\.innerHTML\s*=/);
+  assert.match(script, /localStorage\.setItem/);
   assert.ok(Buffer.byteLength(html) < 200000);
 });
 
@@ -381,7 +382,38 @@ test('Chromium renders Spanish AI adoption phases with independent memory-only c
   } finally { await browser.close(); }
 });
 
-function richConfig() {
+    test('standalone HTML persists records and workflow choices across reloads without changing its configuration', async () => {
+      assert.ok(chromium, 'Playwright Chromium must be available');
+      const browser = await chromium.launch({ headless: true });
+      try {
+        const page = await browser.newPage();
+        const value = workflowConfig(), html = kit.renderHTML(value), errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        await page.route('http://127.0.0.1/miniapp', route => route.fulfill({ contentType: 'text/html', body: html }));
+        await page.goto('http://127.0.0.1/miniapp');
+        const item = page.locator('[data-component-id="adoption"] [data-workflow-item="limits"]');
+        await item.check();
+        const form = page.locator('[data-record-form="form"]');
+        await form.locator('[data-record-select]').selectOption('0');
+        await form.locator('[data-record-field="label"]').fill('Cambio persistente');
+        await form.locator('button[type="submit"]').click();
+        assert.match(await form.locator('.form-message').textContent(), /updated/);
+        assert.doesNotMatch(await form.locator('.form-message').textContent(), /No se han guardado/);
+        await page.reload();
+        assert.equal(await item.isChecked(), true);
+        assert.match(await page.locator('[data-component-id="table"] tbody').textContent(), /Cambio persistente/);
+        assert.deepEqual(await page.locator('#blk-dashboard-config').evaluate(node => JSON.parse(node.textContent)), kit.validate(value));
+        await form.locator('[data-record-select]').selectOption('0');
+        await form.locator('[data-record-delete]').click();
+        await item.uncheck();
+        await page.reload();
+        assert.equal(await item.isChecked(), false);
+        assert.doesNotMatch(await page.locator('[data-component-id="table"] tbody').textContent(), /Cambio persistente/);
+        assert.deepEqual(errors, []);
+      } finally { await browser.close(); }
+    });
+
+    function richConfig() {
   const value = config();
   value.components.push(...['board', 'insights', 'form'].map(type => ({ id: type, type, title: type })));
   return value;
@@ -404,10 +436,12 @@ test('rich declarative types retain v1 defaults, safety, original rows and budge
   assert.match(html, /href="#heading-board"/);
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.doesNotMatch(html, /<img|<link|<iframe|\sonclick=/i);
-  assert.match(html, /Synthetic session editor/);
+  assert.match(html, /Record editor/);
+  assert.doesNotMatch(html, /Synthetic session editor|reload resets it/);
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   assert.doesNotThrow(() => new vm.Script(script));
-  assert.doesNotMatch(script, /\b(?:fetch|XMLHttpRequest|eval|localStorage|sessionStorage)\b|\.innerHTML\s*=/);
+  assert.doesNotMatch(script, /\b(?:fetch|XMLHttpRequest|eval|sessionStorage)\b|\.innerHTML\s*=/);
+  assert.match(script, /localStorage\.setItem/);
   value.components = Array.from({ length: 16 }, (_, i) => ({ id: 'rich' + i, type: ['board', 'form', 'insights'][i % 3], title: 'x'.repeat(100), content: 'x'.repeat(1000) }));
   value.data = Array.from({ length: 200 }, (_, i) => ({ date: '2026-01-01', category: 'x'.repeat(100), label: 'x'.repeat(160), value: i, status: 'x'.repeat(40) }));
   assert.ok(Buffer.byteLength(kit.renderHTML(value)) < 200000);
@@ -448,7 +482,8 @@ test('rich browser views compute facts and CRUD stays in synchronized synthetic 
     await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /finite|required/);
     await form.locator('[data-record-field="value"]').fill('-2.5');
     await form.locator('button[type="submit"]').click(); assert.match(await message.textContent(), /added/);
-    assert.equal(await page.locator('.record-card').count(), 3);
+        assert.match(await message.textContent(), /No se han guardado los cambios/);
+        assert.equal(await page.locator('.record-card').count(), 3);
     assert.equal(await page.locator('.record-card h4').filter({ hasText: injection }).textContent(), injection);
     assert.equal(await page.locator('img').count(), 0);
     assert.equal(await page.locator('[data-component-id="records"] [data-metric-value]').textContent(), '3');
