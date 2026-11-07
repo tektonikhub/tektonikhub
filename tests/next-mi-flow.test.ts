@@ -82,7 +82,7 @@ test('Approved application HTML is loaded on demand with credentials, no cache a
     { appId: app.id, version: 3, generatedHtml: null },
     { appId: app.id, version: 3, generatedHtml: '' },
     { appId: app.id, version: 3, generatedHtml: 42 },
-    { appId: app.id, version: 3, generatedHtml: 'x'.repeat(300001) },
+    { appId: app.id, version: 3, generatedHtml: 'x'.repeat(2000001) },
     { appId: app.id, version: 3 },
   ]) await assert.rejects(loadApplicationSource(app, async () => Response.json(source)));
   for (const status of [401, 403, 404, 409, 503]) {

@@ -12,10 +12,11 @@ import type { SubmissionFields } from '@/lib/domain/types';
 import { validatePortableFiles, portableHTML, type PortableFile } from '@/lib/studio/portable';
 import { loadPortableBundle, submitPortableBundle } from '@/lib/studio/portable-client';
 import { isPortableApp } from '@/components/features/shared';
+import { MAX_PORTABLE_FILE_BYTES } from '@/lib/studio/limits';
 
-const MAX_FILES = 10, MAX_JSON_BYTES = 5 * 1024 * 1024, MAX_TOTAL_BYTES = 25 * 1024 * 1024;
+const MAX_FILES = 10, MAX_TOTAL_BYTES = 25 * 1024 * 1024;
 const errorText = (cause: unknown) => {
-  if (cause instanceof z.ZodError) return 'El conjunto de ficheros no es válido: un HTML no vacío de hasta 300.000 caracteres, JSON válidos de hasta 5 MiB y un total de 25 MiB. Usa nombres únicos de hasta 120 caracteres, con letras sin acentos, números, espacios, puntos, guiones o guiones bajos, sin rutas.';
+  if (cause instanceof z.ZodError) return 'El conjunto de ficheros no es válido: un HTML no vacío y JSON válidos de hasta 2 MB por fichero (2.000.000 bytes UTF-8) y un total de 25 MiB. Usa nombres únicos de hasta 120 caracteres, con letras sin acentos, números, espacios, puntos, guiones o guiones bajos, sin rutas.';
   return cause instanceof Error ? cause.message : 'No se pudo completar la operación.';
 };
 const sizeLabel = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -83,8 +84,7 @@ function PortableEditor({ appId, review, invalid }: { appId: string; review: boo
         if (file.name.length > 120 || !/^[a-z0-9][a-z0-9._ -]*\.(html|json)$/i.test(file.name) || file.name.includes('..')) throw new Error('Usa un nombre de hasta 120 caracteres que empiece por una letra sin acentos o un número, sin rutas ni dobles puntos.');
         if (names.has(file.name.toLocaleLowerCase())) throw new Error(`El fichero ${file.name} ya existe. Quítalo antes de reemplazarlo.`);
         names.add(file.name.toLocaleLowerCase());
-        if (/\.json$/i.test(file.name) && file.size > MAX_JSON_BYTES) throw new Error(`El JSON ${file.name} supera 5 MiB.`);
-        if (/\.html$/i.test(file.name) && file.size > 1200000) throw new Error('El HTML supera el límite de 300.000 caracteres.');
+        if (file.size > MAX_PORTABLE_FILE_BYTES) throw new Error(`El fichero ${file.name} supera el límite de 2 MB (2.000.000 bytes).`);
       }
       const read = await Promise.all(additions.map(async (file): Promise<PortableFile> => {
         const content = await file.text(), type = /\.html$/i.test(file.name) ? 'text/html' : 'application/json';
@@ -132,7 +132,7 @@ function PortableEditor({ appId, review, invalid }: { appId: string; review: boo
     <div className="portable-grid">
       <section className="portable-files panel" aria-labelledby="portable-files-title"><h2 id="portable-files-title">Ficheros de la aplicación</h2>
         {!readOnly && <div className={`portable-dropzone ${dragging ? 'is-dragging' : ''}`} onDragOver={event => { event.preventDefault(); if (!busy && ready) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); if (!busy) void addFiles(event.dataTransfer.files); }}>
-          <UploadCloud size={36} aria-hidden="true" /><strong>Arrastra tu HTML y los JSON aquí</strong><p>Un .html obligatorio + hasta nueve .json opcionales.</p><Button onClick={() => input.current?.click()} disabled={busy || !ready}>Seleccionar ficheros</Button><input ref={input} type="file" accept=".html,.json,text/html,application/json" multiple hidden aria-label="Seleccionar HTML y JSON" onChange={event => { if (event.target.files) void addFiles(event.target.files); }} /><small>HTML: 300.000 caracteres · JSON: 5 MiB por fichero · total: 25 MiB</small>
+          <UploadCloud size={36} aria-hidden="true" /><strong>Arrastra tu HTML y los JSON aquí</strong><p>Un .html obligatorio + hasta nueve .json opcionales.</p><Button onClick={() => input.current?.click()} disabled={busy || !ready}>Seleccionar ficheros</Button><input ref={input} type="file" accept=".html,.json,text/html,application/json" multiple hidden aria-label="Seleccionar HTML y JSON" onChange={event => { if (event.target.files) void addFiles(event.target.files); }} /><small>HTML y JSON: 2 MB por fichero (2.000.000 bytes) · total: 25 MiB</small>
         </div>}
         <ul className="portable-file-list" aria-label="Ficheros cargados">{files.map(file => <li key={file.name}>{file.type === 'text/html' ? <FileCode2 aria-hidden="true" size={22} /> : <FileJson aria-hidden="true" size={22} />}<button type="button" className="portable-file-name" onClick={() => { setSelected(file.name); setTab('code'); }}><strong>{file.name}</strong><small>{file.type === 'text/html' ? 'HTML principal' : 'Datos JSON'} · {sizeLabel(new Blob([file.content]).size)}</small></button><Button variant="ghost" aria-label={`Descargar ${file.name}`} onClick={() => download(file)}><Download size={16} aria-hidden="true" /></Button>{!readOnly && <Button variant="ghost" aria-label={`Quitar ${file.name}`} disabled={busy || !ready} onClick={() => { setFiles(current => current.filter(item => item.name !== file.name)); setError(''); setRevision(value => value + 1); }}><X size={16} aria-hidden="true" /></Button>}</li>)}</ul>
         {!files.length && <p className="portable-muted">Todavía no hay ficheros.</p>}<p className="portable-muted">{files.length} / 10 ficheros · {sizeLabel(totalBytes)}. Se lee su contenido en este navegador; solo se sube al enviar a IT.</p>

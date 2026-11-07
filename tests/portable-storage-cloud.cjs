@@ -1,4 +1,5 @@
-/* Opt-in real HTTP test. Run only with the CLI already on studio-portable-apps:
+/* Opt-in real HTTP test. Run only with the CLI already on a disposable branch:
+ * Set PORTABLE_STORAGE_BRANCH and PORTABLE_STORAGE_BASE_URL for that branch.
  * $env:PORTABLE_STORAGE_CLOUD='1'; $env:PORTABLE_PG_DRIVER='<psycopg directory>';
  * node tests\portable-storage-cloud.cjs
  * Requires installed @insforge/sdk and Python psycopg. Never switches branches.
@@ -14,7 +15,8 @@ const { execFileSync, spawnSync } = require('node:child_process');
 const { File } = require('node:buffer');
 let createClient;
 
-const baseUrl = 'https://vxpd968k-eaa.eu-central.insforge.app';
+const baseUrl = process.env.PORTABLE_STORAGE_BASE_URL || 'https://vxpd968k-eaa.eu-central.insforge.app';
+const branchName = process.env.PORTABLE_STORAGE_BRANCH || 'studio-portable-apps';
 const clients = [];
 let stage = 'branch guard';
 let fixture;
@@ -120,7 +122,8 @@ async function main() {
   assert.equal(process.env.PORTABLE_STORAGE_CLOUD, '1', 'Explicit PORTABLE_STORAGE_CLOUD=1 required');
   ({ createClient } = await import('@insforge/sdk'));
   const current = cli('current');
-  assert.ok(current.includes('studio-portable-apps') && current.includes(baseUrl), 'Refusing non-disposable or different CLI target');
+  assert.match(baseUrl, /^https:\/\/vxpd968k-[a-z0-9]+\.eu-central\.insforge\.app$/, 'Refusing production backend');
+  assert.ok(current.includes(branchName) && current.includes(baseUrl), 'Refusing non-disposable or different CLI target');
   const connectionURL = JSON.parse(cli('db connection-string --json')).connectionURL;
   assert.ok(connectionURL, 'Missing connectionURL');
   const secret = JSON.parse(cli('secrets get ANON_KEY --json'));
@@ -167,8 +170,8 @@ async function main() {
     }
     const [admin, developer, catalog, foreign] = clients;
     stage = 'SDK reservation';
-    const html = '<!doctype html><html><body>Portable synthetic fixture</body></html>';
-    const json = '{"synthetic":true,"value":42}';
+    const html = '<!doctype html><html><body>Portable synthetic fixture</body></html>'.padEnd(2_000_000, ' ');
+    const json = '{"synthetic":true,"value":42}'.padEnd(2_000_000, ' ');
     const files = [new File([html], 'app.html', { type: 'text/html' }), new Blob([json], { type: 'application/json' })];
     const metadata = files.map((file, i) => ({ name: i === 0 ? 'app.html' : 'data.json', type: file.type, size: file.size }));
     const reservation = ok(await developer.database.rpc('tk_portable_reserve', { p_files: metadata }), stage);

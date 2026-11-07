@@ -20,20 +20,40 @@ SET CONSTRAINTS ALL DEFERRED;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claims','{"sub":"f0000000-0000-4000-8000-000000000104","role":"authenticated"}',true);
 DO $$
-DECLARE batch uuid; app uuid; count_rows integer;
+DECLARE batch uuid; app uuid; count_rows integer; oversized jsonb;
+  large_html text := '<html>hello</html>' || repeat(' ', 2000000 - 18);
 BEGIN
-  batch := (public.tk_portable_reserve('[{"name":"app.html","type":"text/html","size":18},{"name":"data.json","type":"application/json","size":2}]')->>'id')::uuid;
+  PERFORM public.tk_portable_reserve('[{"name":"limit.html","type":"text/html","size":2000000},{"name":"limit.json","type":"application/json","size":2000000}]');
+  FOR oversized IN SELECT value FROM jsonb_array_elements('[
+    [{"name":"large.html","type":"text/html","size":2000001}],
+    [{"name":"app.html","type":"text/html","size":18},{"name":"large.json","type":"application/json","size":2000001}]
+  ]'::jsonb) LOOP
+    BEGIN
+      PERFORM public.tk_portable_reserve(oversized);
+      RAISE EXCEPTION 'TEST: oversized reservation accepted';
+    EXCEPTION WHEN raise_exception THEN
+      IF SQLERRM LIKE 'TEST:%' THEN RAISE; END IF;
+    END;
+  END LOOP;
+  BEGIN
+    PERFORM public.tk_command('createSubmission', NULL, jsonb_build_object(
+      'title','Oversized unicode','desc','Synthetic description for portable size coverage.','area','it',
+      'generatedHtml',repeat('é',1000000) || 'a'));
+    RAISE EXCEPTION 'TEST: oversized UTF-8 HTML accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  batch := (public.tk_portable_reserve('[{"name":"app.html","type":"text/html","size":2000000},{"name":"data.json","type":"application/json","size":2}]')->>'id')::uuid;
   PERFORM set_config('test.portable_batch',batch::text,true);
-  IF NOT public.tk_portable_storage_file(batch||'/app.html',18,'text/html')
-    OR NOT public.tk_portable_storage_file(batch||'/app.html',18,'application/octet-stream')
+  IF NOT public.tk_portable_storage_file(batch||'/app.html',2000000,'text/html')
+    OR NOT public.tk_portable_storage_file(batch||'/app.html',2000000,'application/octet-stream')
     OR public.tk_portable_storage_file(batch||'/app.html',0,'application/octet-stream')
     OR public.tk_portable_storage_file(batch||'/data.json',2,'application/octet-stream') THEN
     RAISE EXCEPTION 'TEST: invalid HTML storage MIME normalization';
   END IF;
   INSERT INTO storage.objects(bucket,key,size,mime_type,uploaded_by) VALUES
-    ('portable-apps',batch||'/app.html',18,'application/octet-stream',auth.uid()::text);
+    ('portable-apps',batch||'/app.html',2000000,'application/octet-stream',auth.uid()::text);
   BEGIN
-    PERFORM public.tk_portable_submit(batch,'{"title":"RLS portable","desc":"Synthetic description for portable RLS coverage.","area":"it","generatedHtml":"<html>hello</html>"}');
+    PERFORM public.tk_portable_submit(batch,jsonb_build_object('title','RLS portable','desc','Synthetic description for portable RLS coverage.','area','it','generatedHtml',large_html));
     RAISE EXCEPTION 'TEST: incomplete bundle accepted';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM LIKE 'TEST:%' THEN RAISE; END IF;
@@ -46,7 +66,10 @@ BEGIN
     RAISE EXCEPTION 'TEST: unreserved filename accepted';
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
-  app := (public.tk_portable_submit(batch,'{"title":"RLS portable","desc":"Synthetic description for portable RLS coverage.","area":"it","generatedHtml":"<html>hello</html>"}')->>'id')::uuid;
+  app := (public.tk_portable_submit(batch,jsonb_build_object('title','RLS portable','desc','Synthetic description for portable RLS coverage.','area','it','generatedHtml',large_html))->>'id')::uuid;
+  IF (SELECT octet_length(generated_html) FROM public.app_versions WHERE app_id = app AND version = 1) <> 2000000 THEN
+    RAISE EXCEPTION 'TEST: 2 MB HTML was not preserved';
+  END IF;
   PERFORM set_config('test.portable_app',app::text,true);
   UPDATE storage.objects SET size=1 WHERE bucket='portable-apps' AND key=batch||'/data.json';
   GET DIAGNOSTICS count_rows = ROW_COUNT;

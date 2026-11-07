@@ -7,9 +7,14 @@ const html = { name: 'index.html', type: 'text/html', size: 100 };
 const json = { name: 'data.json', type: 'application/json', size: 10 };
 test('Portable manifests are bounded exact HTML/JSON metadata with no data or arbitrary URLs', () => {
   assert.equal(portableMetadataListSchema.parse([html, json]).length, 2);
+  assert.doesNotThrow(() => portableMetadataListSchema.parse([{ ...html, size: 2000000 }, { ...json, size: 2000000 }]));
+  assert.equal(portableMetadataListSchema.safeParse([{ ...html, size: 2000001 }]).success, false);
+  const legacy = { ...json, size: 5242880 };
+  assert.equal(portableMetadataListSchema.safeParse([html, legacy]).success, false);
+  assert.equal(portableManifestSchema.safeParse({ uploadId: 'f0000000-0000-4000-8000-000000000001', files: [html, legacy] }).success, true);
   for (const files of [[json], [html, html], [html, { ...json, name: 'DATA.JSON' }, json],
     [html, { ...json, type: 'text/html' }], [html, { ...json, name: '../data.json' }],
-    [html, { ...json, name: 'data.js' }], [html, { ...json, size: 5242881 }],
+    [html, { ...json, name: 'data.js' }], [html, { ...json, size: 2000001 }],
     [html, { ...json, content: '{}' }]]) {
     assert.equal(portableMetadataListSchema.safeParse(files).success, false);
   }

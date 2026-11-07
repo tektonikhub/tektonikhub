@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { OFFLINE_CSP } from '../lib/studio/engines';
-import { portableFilesSchema, portableHTML, validatePortableFiles, type PortableFile } from '../lib/studio/portable';
+import { portableFilesSchema, portableHTML, validatePortableFiles, validateStoredPortableFiles, type PortableFile } from '../lib/studio/portable';
+import { MAX_PORTABLE_FILE_BYTES, htmlSourceSchema } from '../lib/studio/limits';
 
 const html: PortableFile = { name: 'app.HTML', type: 'text/html', content: '<!DOCTYPE html><html><head><title>Original</title></head><body><h1>Portable</h1></body></html>' };
 const json: PortableFile = { name: 'data.json', type: 'application/json', content: '{"answer":42}' };
@@ -11,7 +12,7 @@ test('portable validation is strict, pure and allows HTML with optional valid JS
   assert.deepEqual(validatePortableFiles([html, json]), [html, json]);
   assert.deepEqual(portableFilesSchema.parse([html]), [html]);
   assert.notEqual(validatePortableFiles([html, json])[0], html);
-  for (const input of [null, {}, [], [json], [html, html], [{ ...html, content: ' \n ' }], [{ ...html, content: 'x'.repeat(300001) }], [{ ...html, extra: 'no' }], [html, { ...json, content: '{' }], [html, { ...json, type: 'text/plain' }], [html, { ...json, name: 'data.html' }], [{ ...html, name: 'app.json' }], [html, json, { ...json, name: 'DATA.JSON' }], [html, ...Array.from({ length: 10 }, (_, i) => ({ ...json, name: `${i}.json` }))]]) {
+  for (const input of [null, {}, [], [json], [html, html], [{ ...html, content: ' \n ' }], [{ ...html, content: 'x'.repeat(MAX_PORTABLE_FILE_BYTES + 1) }], [{ ...html, extra: 'no' }], [html, { ...json, content: '{' }], [html, { ...json, type: 'text/plain' }], [html, { ...json, name: 'data.html' }], [{ ...html, name: 'app.json' }], [html, json, { ...json, name: 'DATA.JSON' }], [html, ...Array.from({ length: 10 }, (_, i) => ({ ...json, name: `${i}.json` }))]]) {
     assert.equal(portableFilesSchema.safeParse(input).success, false);
   }
 });
@@ -23,14 +24,37 @@ test('unsafe filenames reject traversal, URLs, encoded characters and reserved a
   for (const name of ['sales 2026.json', 'metrics-v2.JSON', 'data_1.json']) assert.doesNotThrow(() => validatePortableFiles([html, { ...json, name }]));
 });
 
-test('UTF-8 JSON and total bundle size limits include metadata', () => {
-  const fiveMiB = 5 * 1024 * 1024;
-  const exact = { ...json, content: '"' + 'a'.repeat(fiveMiB - 2) + '"' };
-  assert.doesNotThrow(() => validatePortableFiles([html, exact]));
-  assert.throws(() => validatePortableFiles([html, { ...exact, content: '"' + 'é'.repeat(fiveMiB / 2) + '"' }]));
+test('HTML and JSON accept exactly 2 MB and reject one extra UTF-8 byte', () => {
+  assert.equal(MAX_PORTABLE_FILE_BYTES, 2_000_000);
+  for (const character of ['a', 'é', '😀']) {
+    const bytes = new TextEncoder().encode(character).length;
+    const document = character.repeat(MAX_PORTABLE_FILE_BYTES / bytes);
+    const exactHtml = { ...html, content: document };
+    assert.doesNotThrow(() => validatePortableFiles([exactHtml]));
+    assert.equal(htmlSourceSchema.safeParse(document).success, true);
+    assert.throws(() => validatePortableFiles([{ ...exactHtml, content: document + 'x' }]));
+    assert.equal(htmlSourceSchema.safeParse(document + 'x').success, false);
+    const exactJson = { ...json, content: JSON.stringify(character.repeat(Math.floor((MAX_PORTABLE_FILE_BYTES - 2) / bytes))) };
+    exactJson.content += ' '.repeat(MAX_PORTABLE_FILE_BYTES - new TextEncoder().encode(exactJson.content).length);
+    assert.doesNotThrow(() => validatePortableFiles([exactHtml, exactJson]));
+    assert.throws(() => validatePortableFiles([html, { ...exactJson, content: exactJson.content + ' ' }]));
+  }
+  const large = { ...html, content: '<p>Large HTML</p>' + ' '.repeat(300001) };
+  assert.ok(portableHTML([large]).endsWith(large.content));
+  const maximum = { ...json, content: JSON.stringify('a'.repeat(MAX_PORTABLE_FILE_BYTES - 2)) };
+  assert.doesNotThrow(() => validatePortableFiles([
+    { ...html, content: 'a'.repeat(MAX_PORTABLE_FILE_BYTES) },
+    ...Array.from({ length: 9 }, (_, index) => ({ ...maximum, name: `${index}.json` })),
+  ]));
+});
+
+test('stored legacy JSON remains readable without relaxing new upload limits or bundle bounds', () => {
+  const exact = { ...json, content: JSON.stringify('a'.repeat(5 * 1024 * 1024 - 2)) };
+  assert.throws(() => validatePortableFiles([html, exact]), /2 MB/);
+  assert.doesNotThrow(() => validateStoredPortableFiles([html, exact]));
+  assert.ok(portableHTML([html, exact]).includes('TektonikFiles'));
   const many = Array.from({ length: 5 }, (_, index) => ({ ...exact, name: `${index}.json` }));
-  assert.throws(() => validatePortableFiles([html, ...many]), /25 MiB/);
-  assert.doesNotThrow(() => validatePortableFiles([html, ...many.slice(0, 4)]));
+  assert.throws(() => validateStoredPortableFiles([html, ...many]), /25 MiB/);
 });
 
 test('server rendering preserves original markup and safely embeds untrusted JSON before all scripts', () => {

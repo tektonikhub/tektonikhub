@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { OFFLINE_CSP } from './engines';
+import { MAX_PORTABLE_FILE_BYTES, LEGACY_PORTABLE_JSON_BYTES } from './limits';
 
 export interface PortableFile { name: string; content: string; type: 'text/html' | 'application/json' }
-const JSON_LIMIT = 5 * 1024 * 1024;
 const BUNDLE_LIMIT = 25 * 1024 * 1024;
 const encoder = new TextEncoder();
 
@@ -12,7 +12,7 @@ function safeName(name: string): boolean {
     && !name.includes('..') && !/[. ]\./.test(name)
     && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:[. ]|$)/i.test(name);
 }
-export const portableFilesSchema = z.array(z.object({
+const filesSchema = (jsonLimit: number) => z.array(z.object({
   name: z.string().refine(safeName, 'Use a safe HTML or JSON basename.'),
   content: z.string(),
   type: z.enum(['text/html', 'application/json']),
@@ -25,27 +25,33 @@ export const portableFilesSchema = z.array(z.object({
     if (names.has(name)) issue('Filenames must be unique ignoring case.', 'name');
     names.add(name);
     if (file.type === 'text/html') htmlCount++;
-    const characterLimit = file.type === 'text/html' ? 300_000 : JSON_LIMIT;
-    if (file.content.length > characterLimit) {
-      issue(file.type === 'text/html' ? 'HTML must be at most 300000 characters.' : 'JSON exceeds 5 MiB of UTF-8 data.');
+    const limit = file.type === 'text/html' ? MAX_PORTABLE_FILE_BYTES : jsonLimit;
+    if (file.content.length > limit) {
+      issue('File exceeds the UTF-8 byte limit (2 MB for new uploads).');
       continue;
     }
     const size = encoder.encode(file.content).length;
     total += size + encoder.encode(file.name).length + encoder.encode(file.type).length;
+    if (size > limit) {
+      issue('File exceeds the UTF-8 byte limit (2 MB for new uploads).');
+      continue;
+    }
     if (file.type === 'text/html') {
       if (!name.endsWith('.html')) issue('HTML requires an .html extension.', 'name');
-      if (!file.content.trim() || file.content.length > 300_000) issue('HTML must be nonempty and at most 300000 characters.');
+      if (!file.content.trim()) issue('HTML must be nonempty.');
     } else {
       if (!name.endsWith('.json')) issue('JSON requires a .json extension.', 'name');
-      if (size > JSON_LIMIT) issue('JSON exceeds 5 MiB of UTF-8 data.');
-      else { try { JSON.parse(file.content); } catch { issue('Invalid JSON.'); } }
+      try { JSON.parse(file.content); } catch { issue('Invalid JSON.'); }
     }
   }
   if (htmlCount !== 1) ctx.addIssue({ code: 'custom', message: 'Exactly one HTML file is required.' });
   if (total > BUNDLE_LIMIT) ctx.addIssue({ code: 'custom', message: 'Bundle exceeds 25 MiB of UTF-8 data.' });
 });
 
+export const portableFilesSchema = filesSchema(MAX_PORTABLE_FILE_BYTES);
+const storedFilesSchema = filesSchema(LEGACY_PORTABLE_JSON_BYTES);
 export function validatePortableFiles(input: unknown): PortableFile[] { return portableFilesSchema.parse(input); }
+export function validateStoredPortableFiles(input: unknown): PortableFile[] { return storedFilesSchema.parse(input); }
 
 const runtime = String.raw`
 (() => {
@@ -227,7 +233,7 @@ const runtime = String.raw`
  * text/json/blob/arraybuffer responses and cancellation, not uploads, HTTP caches or timeout simulation.
  */
 export function portableHTML(files: PortableFile[]): string {
-  const validated = validatePortableFiles(files);
+  const validated = validateStoredPortableFiles(files);
   const html = validated.find(file => file.type === 'text/html')!.content;
   const json = JSON.stringify(validated.filter(file => file.type === 'application/json'))
     .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')

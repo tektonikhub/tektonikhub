@@ -134,7 +134,7 @@ test('submission source is a bounded no-store read tied to the exact ticket vers
     {appId:app.id,version:4,generatedHtml:'stale'},
     {appId:'00000000-0000-4000-8000-000000000301',version:3,generatedHtml:'wrong ticket'},
     {appId:app.id,version:3,generatedHtml:42},
-    {appId:app.id,version:3,generatedHtml:'x'.repeat(300001)},
+    {appId:app.id,version:3,generatedHtml:'x'.repeat(2000001)},
     {appId:app.id,version:3},
   ])await assert.rejects(loadSubmissionSource(app,async()=>Response.json(response)));
   await assert.rejects(loadSubmissionSource(app,async()=>Response.json({error:'Version conflict'},{status:409})),/Version conflict/);

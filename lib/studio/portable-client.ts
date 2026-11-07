@@ -4,7 +4,7 @@ import { createBrowserClient } from '@insforge/sdk/ssr';
 import { z } from 'zod';
 import { cookieSettings, insforgeOptions } from '@/lib/auth/config';
 import { requestJson } from '@/lib/data/http-client';
-import { validatePortableFiles, type PortableFile } from './portable';
+import { validatePortableFiles, validateStoredPortableFiles, type PortableFile } from './portable';
 import { portableManifestSchema, type PortableManifest } from './portable-manifest';
 
 const resultSchema = z.object({ id: z.uuid() });
@@ -17,7 +17,7 @@ export async function downloadPortableManifest(manifest: PortableManifest): Prom
     if (result.data.size !== file.size) throw new Error('El tamaño de un asset no coincide con la versión guardada.');
     files.push({ name: file.name, type: file.type, content: await result.data.text() });
   }
-  return validatePortableFiles(files);
+  return validateStoredPortableFiles(files);
 }
 export async function loadPortableBundle(appId: string, version: number): Promise<PortableFile[]> {
   const params = new URLSearchParams({ appId, version: String(version) });

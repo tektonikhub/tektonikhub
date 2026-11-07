@@ -3,9 +3,10 @@ import type { App } from '@/lib/domain/types';
 import { requestJson } from './http-client';
 import { portableManifestSchema } from '@/lib/studio/portable-manifest';
 import { portableHTML } from '@/lib/studio/portable';
+import { htmlSourceSchema } from '@/lib/studio/limits';
 
 const sourceSchema = z.object({
-  appId: z.uuid(), version: z.number().int().positive(), generatedHtml: z.string().min(1).max(300000),
+  appId: z.uuid(), version: z.number().int().positive(), generatedHtml: htmlSourceSchema.refine(value => value.length > 0),
   portable: portableManifestSchema.optional(),
 }).strict();
 

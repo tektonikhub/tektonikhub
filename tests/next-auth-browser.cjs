@@ -45,7 +45,7 @@ fetch('./data.json').then(response => response.json()).then(value => { data = va
 document.querySelector('#increment').onclick = () => { data.count++; render(); };
 document.querySelector('#export').onclick = () => window.TektonikFiles.exportJSON('saved.json', data);
 document.querySelector('#import').onchange = async event => { data = JSON.parse(await event.target.files[0].text()); render(); };
-</script></body></html>`;
+</script></body></html>`.padEnd(2_000_000, ' ');
 const portableFiles = [
   { name: 'index.html', type: 'text/html', content: portableHtml },
   { name: 'data.json', type: 'application/json', content: JSON.stringify(portableData) },
@@ -537,7 +537,8 @@ async function main() {
           [{ name: '../index.html', type: 'text/html', size: 10 }],
           [{ name: 'index.html', type: 'application/json', size: 10 }],
           [portableMetadata[1]], [portableMetadata[0], portableMetadata[0]],
-          [portableMetadata[0], { name: 'huge.json', type: 'application/json', size: 5242881 }],
+          [portableMetadata[0], { name: 'huge.json', type: 'application/json', size: 2000001 }],
+          [{ name: 'huge.html', type: 'text/html', size: 2000001 }],
         ]) assert.equal((await post(page, '/api/studio/portable', { action: 'reserve', files })).status, 400);
         assert.equal(portableCalls.length, before, 'Invalid file metadata must fail before reservation RPC');
         const input = page.getByLabel('Seleccionar HTML y JSON', { exact: true });
@@ -548,6 +549,11 @@ async function main() {
         await input.setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{invalid') });
         await page.getByRole('alert').getByText('El fichero bad.json no contiene JSON válido.', { exact: true }).waitFor();
         assert.equal(await page.locator('.portable-file-list li').count(), 0);
+        for (const [name, mimeType] of [['huge.html', 'text/html'], ['huge.json', 'application/json']]) {
+          await input.setInputFiles({ name, mimeType, buffer: Buffer.alloc(2_000_001, 'x') });
+          await page.getByRole('alert').getByText(`El fichero ${name} supera el límite de 2 MB (2.000.000 bytes).`, { exact: true }).waitFor();
+          assert.equal(await page.locator('.portable-file-list li').count(), 0);
+        }
         assert.equal(await page.locator('.studio-chat, #promptInput').count(), 0);
       } finally { await ctx.close(); }
     });
