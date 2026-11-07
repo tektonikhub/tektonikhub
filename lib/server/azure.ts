@@ -6,6 +6,7 @@ import { record } from '@/lib/studio/draft';
 import type { LLMStatus } from '@/lib/studio/llm';
 import type { DashboardConfig } from '@/lib/studio/types';
 import { generateStudioApplication, STUDIO_GENERATION_TIMEOUT, type StudioCompletion } from '@/lib/studio/generation';
+import { generationStream, GENERATION_STREAM_TYPE, type GenerationStage } from '@/lib/studio/generation-stream';
 import { authenticatedContext } from './auth';
 import { azureClearSchema, azureGenerationSchema, azureOrganizationSchema, azureRequestError, azureSaveSchema, azureTestSchema, normalizeAzureEndpoint } from './azure-policy';
 import { databaseError, errorResponse, HttpError, jsonResponse, readJson, sameOrigin } from './http';
@@ -115,6 +116,11 @@ function dashboard(value: unknown, upstream = false): DashboardConfig {
       : 'La configuración previa del dashboard no es válida.');
   }
 }
+function abortedAzure(signal: AbortSignal): HttpError {
+  return signal.reason instanceof Error && signal.reason.name === 'TimeoutError'
+    ? new HttpError(504, 'Azure agotó el plazo de generación. Inténtalo de nuevo; si se repite, IT debe revisar la latencia y la cuota del deployment.')
+    : new HttpError(499, 'La petición fue cancelada por el cliente.');
+}
 function outputJSON(value: unknown): unknown {
   if (!record(value) || value.status !== 'completed' || !Array.isArray(value.output)) {
     throw new HttpError(422, 'Azure truncó, filtró o no completó la respuesta. No se ha creado ninguna versión.');
@@ -159,7 +165,7 @@ async function callAzure(settings: Credentials, apiKey: string, completion: Pick
       let details: unknown;
       try { details = JSON.parse(await limitedJSONText(response.body, 16_384)); }
       catch (error) {
-        if (signal.aborted) throw new HttpError(504, 'Petición cancelada o tiempo de espera de Azure agotado.');
+        if (signal.aborted) throw abortedAzure(signal);
         console.warn('Azure error response could not be read', { status: response.status, name: error instanceof Error ? error.name : 'UnknownError' });
       }
       throw new HttpError(502, azureRequestError(response.status, details));
@@ -171,13 +177,13 @@ async function callAzure(settings: Credentials, apiKey: string, completion: Pick
     let body: unknown;
     try { body = JSON.parse(await limitedJSONText(response.body)); }
     catch {
-      if (signal.aborted) throw new HttpError(504, 'Petición cancelada o tiempo de espera de Azure agotado.');
+      if (signal.aborted) throw abortedAzure(signal);
       throw new HttpError(502, 'Azure no devolvió JSON válido dentro del límite permitido.');
     }
     return outputJSON(body);
   } catch (error) {
     if (error instanceof HttpError) throw error;
-    if (signal.aborted) throw new HttpError(504, 'Petición cancelada o tiempo de espera de Azure agotado.');
+    if (signal.aborted) throw abortedAzure(signal);
     console.error('Azure request failed', { name: error instanceof Error ? error.name : 'UnknownError' });
     throw new HttpError(502, 'No se pudo conectar con Azure. Revisa la conexión y la configuración del recurso.');
   }
@@ -190,29 +196,48 @@ async function generate(request: Request, context: Context, orgId: string, promp
   if (await rpc(context, 'tk_azure_claim', { p_org: orgId, p_lease: lease }) !== true) {
     throw new HttpError(429, 'Ya hay una petición en curso o se alcanzó el límite de 12 peticiones por minuto de esta empresa.');
   }
-  try {
-    const current = await credentials(context, orgId);
-    if (!current || current.version !== settings.version) throw new HttpError(409, 'La configuración cambió. Vuelve a intentar la generación.');
-    // All design, composition and repair calls share the existing 65-second organization lease.
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(STUDIO_GENERATION_TIMEOUT)]);
-    if (prompt === null) {
-      const output = await callAzure(settings, apiKey, { instructions: 'Return only the JSON object {"ok":true}.', input: 'Return only the JSON object {"ok":true}.', maxOutputTokens: 2048 }, signal);
-      if (!record(output) || output.ok !== true || Object.keys(output).length !== 1) throw new HttpError(422, 'El modelo no completó la prueba JSON.');
-      return jsonResponse({ ok: true, message: 'Conexión y JSON verificados con Azure Responses v1. La configuración está disponible para esta organización.' });
-    }
+  const run = async (progress: (stage: GenerationStage) => void, cancellation: AbortSignal) => {
+    // The 240-second model budget fits inside both the 300-second lease and hosting limit.
+    const signal = AbortSignal.any([cancellation, AbortSignal.timeout(prompt === null ? 30_000 : STUDIO_GENERATION_TIMEOUT)]);
+    const started = Date.now();
+    let stage: GenerationStage = 'expand';
     try {
-      const result = await generateStudioApplication(prompt, previous, dashboardKit,
-        completion => callAzure(settings, apiKey, completion, signal), allowDataChanges);
       signal.throwIfAborted();
-      return jsonResponse({ ...result, provider: 'azure-openai', model: settings.deployment });
+      const current = await credentials(context, orgId);
+      if (!current || current.version !== settings.version) throw new HttpError(409, 'La configuración cambió. Vuelve a intentar la generación.');
+      if (prompt === null) {
+        const output = await callAzure(settings, apiKey, { instructions: 'Return only the JSON object {"ok":true}.', input: 'Return only the JSON object {"ok":true}.', maxOutputTokens: 2048 }, signal);
+        if (!record(output) || output.ok !== true || Object.keys(output).length !== 1) throw new HttpError(422, 'El modelo no completó la prueba JSON.');
+        return { ok: true, message: 'Conexión y JSON verificados con Azure Responses v1. La configuración está disponible para esta organización.' };
+      }
+      const result = await generateStudioApplication(prompt, previous, dashboardKit, async completion => {
+        stage = completion.stage;
+        progress(stage);
+        const callStarted = Date.now();
+        const output = await callAzure(settings, apiKey, completion, signal);
+        console.info('Studio Azure phase completed', { operation: lease, stage, durationMs: Date.now() - callStarted });
+        return output;
+      }, allowDataChanges);
+      stage = 'validate';
+      progress(stage);
+      signal.throwIfAborted();
+      return { ...result, provider: 'azure-openai', model: settings.deployment };
     } catch (error) {
+      console.warn('Studio Azure operation failed', { operation: lease, stage, elapsedMs: Date.now() - started, status: error instanceof HttpError ? error.status : undefined, aborted: signal.aborted });
+      if (signal.aborted) throw abortedAzure(signal);
       if (error instanceof HttpError) throw error;
-      if (signal.aborted) throw new HttpError(504, 'Petición cancelada o tiempo de espera de Azure agotado.');
       throw new HttpError(422, 'No se pudo completar una aplicación válida con el alcance diseñado. No se ha creado ninguna versión; la anterior se conserva.');
+    } finally {
+      try { await rpc(context, 'tk_azure_release', { p_org: orgId, p_lease: lease }); }
+      catch { console.error('Studio Azure lease release failed', { operation: lease }); }
     }
-  } finally {
-    await rpc(context, 'tk_azure_release', { p_org: orgId, p_lease: lease });
+  };
+  if (prompt !== null && request.headers.get('accept')?.includes(GENERATION_STREAM_TYPE)) {
+    return generationStream(run, request.signal, error => error instanceof HttpError
+      ? { status: error.status, error: error.message }
+      : { status: 503, error: 'No se pudo completar la generación.' });
   }
+  return jsonResponse(await run(() => {}, request.signal));
 }
 export async function organizationAzure(request: Request, path: string): Promise<Response> {
   try {

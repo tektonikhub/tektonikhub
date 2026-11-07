@@ -100,17 +100,21 @@ export function useStudio(){
       setGenerationStatus(previous?'Diseñando los cambios y revisando la aplicación…':'Ampliando tu idea, diseñando los flujos y construyendo la aplicación…');
       const prior=previous?.spec.dashboard||null;
       if(previous&&!prior)throw new Error('Esta versión antigua no es un dashboard compatible. Exporta tu trabajo y reinicia el borrador antes de crear con el LLM.');
-      const result=await llm.generate(orgId,prompt,prior,engines.kit,controller.signal,authorizedDataChanges);
+      const result=await llm.generate(orgId,prompt,prior,engines.kit,controller.signal,authorizedDataChanges,({stage,elapsedMs})=>{
+        if(controller.signal.aborted||revision!==sessionRevision.current)return;
+        const labels={expand:'Ampliando tu idea y diseñando los flujos',compose:'Construyendo la aplicación',repair:'Revisando y corrigiendo la configuración',validate:'Validando la aplicación y preparando la vista previa'};
+        setGenerationStatus(`${labels[stage]}…${elapsedMs>=15_000?` · ${Math.floor(elapsedMs/1000)} s`:''}`);
+      });
       const config=engines.kit.validate(result.config),model=result.model;
       const spec=withDashboard(specForKind(engines.engine,prompt,'dashboard',previous?.spec||null),config);
       checkAbort(controller.signal);setGenerationStatus('Preparando la vista previa…');await waitForGeneration(controller.signal);
       const html=generatedDocument(engines.kit.renderHTML(config),'azure-openai',model);
       checkAbort(controller.signal);if(revision!==sessionRevision.current)return;
-      const explanation=[result.brief?.summary||'Aplicación creada a partir de tu descripción.',`${config.components.length} bloques interactivos y de contenido validados.`,result.brief?.features.length?`Incluye: ${result.brief.features.join(' · ')}.`:'',result.brief?.assumptions.length?`Supuestos: ${result.brief.assumptions.join(' · ')}.`:'',result.brief?.limitations.length?`Límites: ${result.brief.limitations.join(' · ')}.`:'','Revisa la vista previa y describe los cambios que necesites. Datos sintéticos, sin conexión a la red. La edición de registros vive solo en la vista previa y se reinicia al recargar o exportar.'].filter(Boolean).join('\n\n').slice(0,4000);
+      const explanation=[result.brief?.summary||'Aplicación creada a partir de tu descripción.',`${config.components.length} bloques interactivos y de contenido validados.`,result.brief?.features.length?`Incluye: ${result.brief.features.join(' · ')}.`:'',result.brief?.assumptions.length?`Supuestos: ${result.brief.assumptions.join(' · ')}.`:'',result.brief?.limitations.length?`Límites: ${result.brief.limitations.join(' · ')}.`:'','Revisa la vista previa y describe los cambios que necesites. Datos sintéticos, sin conexión a la red. La edición de registros y las marcas de los checklists viven solo en la vista previa y se reinician al recargar o exportar.'].filter(Boolean).join('\n\n').slice(0,4000);
       commit(addVersion(draftRef.current,{spec,html,provider:'azure-openai',model,createdAt:new Date().toISOString(),...(previous?{parentId:previous.id}:{})},explanation));
     }catch(generationError){
       if(revision!==sessionRevision.current)return;
-      const aborted=generationError instanceof Error&&generationError.name==='AbortError';const message=aborted?'Generación detenida. La última versión completa se conserva.':`No se creó ninguna versión: ${generationError instanceof Error?generationError.message:'error inesperado'}. La versión anterior se conserva.`;
+      const aborted=generationError instanceof Error&&generationError.name==='AbortError';const message=aborted?'Generación detenida. La última versión completa se conserva.':`No se creó ninguna versión: ${(generationError instanceof Error?generationError.message:'error inesperado').replace(/[.!?]+$/,'')}. La versión anterior se conserva.`;
       if(!aborted)setError(message);commit({...draftRef.current,messages:[...draftRef.current.messages,{role:'assistant' as const,text:message.slice(0,4000)}].slice(-MAX_MESSAGES)});
     }finally{if(revision===sessionRevision.current){job.current=null;setBusy(false);setGenerationStatus('');}}
   };

@@ -13,6 +13,27 @@ const brief = {
   design: { accent: '#60A5FA', dark: false }, assumptions: ['Los registros son ficticios'],
   acceptanceCriteria: ['Los filtros actualizan las vistas'], limitations: ['Sin CRM externo'],
 };
+test('Studio builds focused adoption workflows and repairs missing or reordered planned phases once', async () => {
+  const titles = ['Fundamentos', 'Primer agente', 'Cowork: ejecución supervisada'];
+  const focused = { ...brief, scope: 'focused', features: [{ type: 'workflow', title: 'Adopción de IA', purpose: 'Checklist por fase', phaseTitles: titles }] };
+  const phases = titles.map((title, index) => ({ id: 'phase' + index, title, description: 'Objetivo y criterio de salida', items: [{ id: 'check' + index, label: 'Revisar resultados antes de avanzar', checked: false }] }));
+  const workflow = kit.validate({ ...config, title: 'Adopción de IA', data: [], components: [{ id: 'adoption', type: 'workflow', title: 'Adopción de IA', span: 12, phases }] });
+  const calls: StudioCompletion[] = [];
+  const result = await generateStudioApplication('Tres fases: fundamentos, primer agente y cowork, con checklists', null, kit, async call => {
+    calls.push(call);
+    return call.stage === 'expand' ? focused : call.stage === 'compose' ? { ...workflow, components: [{ ...workflow.components[0], phases: phases.slice(0, 2) }] } : workflow;
+  });
+  assert.deepEqual(calls.map(call => call.stage), ['expand', 'compose', 'repair']);
+  assert.deepEqual(result.config.components[0].phases?.map(phase => phase.title), titles);
+  assert.deepEqual(result.config.data, []);
+  assert.match(JSON.parse(calls[2].input).validationError, /exact number and order/);
+  assert.match(calls[0].instructions, /educational diagrams/);
+  assert.match(calls[1].instructions, /supervised AI execution/);
+  assert.equal(calls[0].maxOutputTokens, 6000);
+  const wrong = { ...workflow, components: [{ ...workflow.components[0], phases: [...phases].reverse() }] };
+  await assert.rejects(generateStudioApplication('Tres fases', null, kit, async call => call.stage === 'expand' ? focused : wrong), /exact number and order/);
+  assert.equal(studioBriefSchema.safeParse({ ...focused, features: [{ ...focused.features[0], type: 'text' }] }).success, false);
+});
 test('Studio expands original intent before composing a richer application, without changing the prompt', async () => {
   const calls: StudioCompletion[] = [], prompt = 'Una app de ventas para mi equipo';
   const result = await generateStudioApplication(prompt, null, kit, async request => {
@@ -27,7 +48,7 @@ test('Studio expands original intent before composing a richer application, with
   assert.equal(result.brief.summary, brief.summary);
   assert.deepEqual(result.brief.features, config.components.map(component => component.title));
   assert.deepEqual(result.config, kit.validate(config));
-  assert.equal(STUDIO_GENERATION_TIMEOUT, 60000);
+  assert.equal(STUDIO_GENERATION_TIMEOUT, 240000);
 });
 test('Studio brief rejects filler scope, unknown features, oversized text and executable properties', () => {
   for (const change of [

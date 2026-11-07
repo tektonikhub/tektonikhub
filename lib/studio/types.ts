@@ -3,7 +3,13 @@ export type Provider = 'demo' | 'azure-openai';
 export type DashboardField = 'date' | 'category' | 'label' | 'value' | 'status';
 export type JSONData = null | string | number | boolean | JSONData[] | { [key: string]: JSONData };
 export interface DashboardRow { date: string; category: string; label: string; value: number; status: string }
-export interface DashboardComponent { id: string; type: 'metric' | 'table' | 'chart' | 'filters' | 'text' | 'board' | 'form' | 'insights'; title: string; span?: number; field?: DashboardField; aggregation?: 'sum' | 'avg' | 'count'; chartType?: 'bar' | 'line' | 'donut'; groupBy?: 'category' | 'date' | 'status'; columns?: DashboardField[]; pageSize?: number; fields?: Exclude<DashboardField, 'value'>[]; content?: string }
+export interface DashboardWorkflowItem { id: string; label: string; checked?: boolean; detail?: string }
+export interface DashboardWorkflowPhase { id: string; title: string; description: string; items: DashboardWorkflowItem[] }
+interface DashboardComponentProperties { id: string; title: string; span?: number; field?: DashboardField; aggregation?: 'sum' | 'avg' | 'count'; chartType?: 'bar' | 'line' | 'donut'; groupBy?: 'category' | 'date' | 'status'; columns?: DashboardField[]; pageSize?: number; fields?: Exclude<DashboardField, 'value'>[]; content?: string }
+export type DashboardComponent = DashboardComponentProperties & (
+  | { type: 'metric' | 'table' | 'chart' | 'filters' | 'text' | 'board' | 'form' | 'insights'; phases?: never }
+  | { type: 'workflow'; phases: DashboardWorkflowPhase[] }
+);
 export interface DashboardConfig { version: 1; title: string; description: string; theme: { dark: boolean; accent: string }; template: 'sales' | 'operations' | 'projects'; data: DashboardRow[]; components: DashboardComponent[] }
 export interface StudioSpec { kind: StudioKind; title: string; description: string; accent: string; dark: boolean; compact: boolean; chart: boolean; search: boolean; area: string; dashboard?: DashboardConfig }
 export interface StudioEngine { createSpec(prompt: string, previous?: StudioSpec | null): StudioSpec; renderHTML(spec: StudioSpec): string; explainChanges(previous: StudioSpec | null, spec: StudioSpec): string }
