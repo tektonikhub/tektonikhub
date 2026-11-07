@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { portableManifest } from '@/lib/server/portable';
 import { authenticatedContext } from '@/lib/server/auth';
 import { databaseError, errorResponse, HttpError, jsonResponse } from '@/lib/server/http';
 
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
       throw new HttpError(503, 'No se pudo recuperar un HTML válido de la aplicación.');
     }
     if (!document.data.generated_html?.trim()) throw new HttpError(409, 'Esta aplicación no tiene HTML guardado. Su creador debe enviar una versión desde Studio.');
-    return jsonResponse({ appId, version, generatedHtml: document.data.generated_html });
+    const portable = await portableManifest(client, appId, version);
+    return jsonResponse({ appId, version, generatedHtml: document.data.generated_html, ...(portable ? { portable } : {}) });
   } catch (error) { return errorResponse(error); }
 }

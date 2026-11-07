@@ -34,11 +34,37 @@ const sourceRows = Array.from({ length: 13 }, (_, index) => ({
   generated_html: index === 6 ? null : index === 9 ? 42 : index === 1 ? sourceHtml.replace('synthetic-model', 'second-model') : sourceHtml,
 }));
 const referenceFile = { name: 'reference.csv', type: 'text/csv', size: 42 };
+const portableData = { title: 'Linked JSON ✓', count: 7 };
+const portableHtml = `<!doctype html><html><head><title>Portable test</title></head><body>
+<h1>Portable counter</h1><output id="result">Loading</output><button id="increment">Increment</button>
+<button id="export">Save JSON</button><label>Load JSON<input id="import" type="file" accept=".json,application/json"></label>
+<script>
+let data;
+const render = () => document.querySelector('#result').textContent = data.title + ': ' + data.count;
+fetch('./data.json').then(response => response.json()).then(value => { data = value; render(); });
+document.querySelector('#increment').onclick = () => { data.count++; render(); };
+document.querySelector('#export').onclick = () => window.TektonikFiles.exportJSON('saved.json', data);
+document.querySelector('#import').onchange = async event => { data = JSON.parse(await event.target.files[0].text()); render(); };
+</script></body></html>`;
+const portableFiles = [
+  { name: 'index.html', type: 'text/html', content: portableHtml },
+  { name: 'data.json', type: 'application/json', content: JSON.stringify(portableData) },
+];
+const portableMetadata = portableFiles.map(({ name, type, content }) => ({ name, type, size: Buffer.byteLength(content) }));
 let sourceVersion = 3, sourceReadFailure = false;
 const sourceReads = [], commands = [];
 const createdApps = [];
 const flowEntries = new Map();
 const applicationSources = new Map();
+const portableUploads = new Map(), portableManifests = new Map(), portableObjects = new Map();
+const portableCalls = [], storageCalls = [], applicationReviews = [];
+let passed = 0, failed = 0;
+function canReadPortable(account, uploadId) {
+  const upload = portableUploads.get(uploadId);
+  const app = createdApps.find(app => portableManifests.get(app.id)?.uploadId === uploadId);
+  return Boolean(account?.enabled && account.verified && upload && (upload.owner === account.id
+    || app?.orgId === orgId && (['admin', 'superadmin'].includes(account.role) || app.reviewStatus === 'approved')));
+}
 let applicationOrganizationStatus = 'active';
 let base, environment, next, browser, logs = '';
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -74,7 +100,7 @@ function workspace(account) {
       metrics: { hours: 0, users: 0, rating: '-' }, reviewStatus: 'changes_requested', maturity: 'new', version: 3,
       ticket: `APP-${row.id.slice(-4)}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', environment: '',
     })), ...createdApps.filter(app => app.orgId === orgId && !app.deletedAt)],
-    reviews: [], events: [], policies: [],
+    reviews: applicationReviews, events: [], policies: [],
   };
 }
 function send(response, status, value) {
@@ -86,12 +112,99 @@ function fail(response, status) { send(response, status, { statusCode: status, e
 const backend = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, 'http://127.0.0.1');
+    if (request.headers.origin === base) {
+      response.setHeader('Access-Control-Allow-Origin', base);
+      response.setHeader('Access-Control-Allow-Headers', 'authorization, content-type, x-client-info, apikey, x-api-key');
+      response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      response.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+    if (request.method === 'OPTIONS') { response.writeHead(204); return response.end(); }
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
-    const text = Buffer.concat(chunks).toString('utf8');
-    const body = text ? JSON.parse(text) : {};
+    const raw = Buffer.concat(chunks);
+    const text = raw.toString('utf8');
+    const multipart = request.headers['content-type']?.startsWith('multipart/form-data');
+    const body = text && !multipart ? JSON.parse(text) : {};
     const token = request.headers.authorization?.replace(/^Bearer /, '');
     const account = accessTokens.get(token);
+    if (url.pathname.startsWith('/api/storage/buckets/portable-apps/')) {
+      if (!account?.enabled || !account.verified) return fail(response, 401);
+      const prefix = '/api/storage/buckets/portable-apps/';
+      const suffix = url.pathname.slice(prefix.length);
+      const strategy = suffix === 'upload-strategy';
+      const downloadStrategy = suffix.startsWith('download-strategy/objects/');
+      const key = strategy ? body.filename : decodeURIComponent(suffix.replace(/^(download-strategy\/)?objects\//, ''));
+      const [uploadId, name] = key.split('/');
+      const upload = portableUploads.get(uploadId);
+      const metadata = upload?.files.find(file => file.name === name);
+      storageCalls.push({ method: request.method, key, role: account.role, origin: request.headers.origin || null });
+      if (!metadata || !canReadPortable(account, uploadId)) return fail(response, 403);
+      if (strategy || request.method === 'PUT' || request.method === 'DELETE') {
+        if (upload.owner !== account.id || upload.submitted) return fail(response, 403);
+      }
+      if (strategy) {
+        assert.equal(body.contentType, metadata.type); assert.equal(body.size, metadata.size);
+        return send(response, 200, { method: 'direct' });
+      }
+      if (request.method === 'DELETE' || request.method === 'PUT' && portableObjects.has(key)) return fail(response, 403);
+      if (request.method === 'PUT') {
+        assert.ok(multipart);
+        const parsed = await new Response(raw, { headers: { 'Content-Type': request.headers['content-type'] } }).formData();
+        const file = parsed.get('file');
+        assert.equal(file.name, name); assert.equal(file.type, metadata.type); assert.equal(file.size, metadata.size);
+        portableObjects.set(key, { content: Buffer.from(await file.arrayBuffer()), type: file.type });
+        return send(response, 200, { key, bucket: 'portable-apps', size: file.size, mimeType: file.type });
+      }
+      if (downloadStrategy) return send(response, 200, { method: 'direct', url: `${environment.NEXT_PUBLIC_INSFORGE_URL}${prefix}objects/${encodeURIComponent(key)}` });
+      const file = portableObjects.get(key);
+      if (!file) return fail(response, 404);
+      response.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': 'no-store' });
+      return response.end(file.content);
+    }
+    if (url.pathname.startsWith('/api/database/rpc/tk_portable_')) {
+      if (!account?.enabled || !account.verified) return fail(response, 401);
+      const action = url.pathname.split('/').at(-1);
+      portableCalls.push({ action, ...body, role: account.role });
+      if (action === 'tk_portable_manifest') {
+        assert.deepEqual(Object.keys(body).sort(), ['p_app', 'p_version']);
+        const manifest = portableManifests.get(body.p_app);
+        if (!manifest) return send(response, 200, null);
+        const app = createdApps.find(app => app.id === body.p_app && app.version === body.p_version);
+        return send(response, 200, app && canReadPortable(account, manifest.uploadId) ? manifest : null);
+      }
+      if (!studioRoles.includes(account.role)) return fail(response, 403);
+      if (action === 'tk_portable_reserve') {
+        assert.deepEqual(Object.keys(body), ['p_files']);
+        const id = sourceId(2000 + portableUploads.size);
+        portableUploads.set(id, { owner: account.id, files: body.p_files, submitted: false });
+        return send(response, 200, { id });
+      }
+      const upload = portableUploads.get(body.p_upload);
+      if (!upload || upload.owner !== account.id || upload.submitted) return fail(response, 403);
+      if (action === 'tk_portable_pending') return send(response, 200, { uploadId: body.p_upload, files: upload.files });
+      if (action === 'tk_portable_submit') {
+        assert.deepEqual(Object.keys(body).sort(), ['p_fields', 'p_id', 'p_upload', 'p_version']);
+        assert.equal(body.p_fields.generatedHtml, portableObjects.get(`${body.p_upload}/${upload.files.find(file => file.type === 'text/html').name}`).content.toString('utf8'));
+        let app;
+        if (body.p_id) {
+          app = createdApps.find(app => app.id === body.p_id && app.authorId === account.id && app.reviewStatus === 'changes_requested');
+          if (!app) return fail(response, 403);
+          if (app.version !== body.p_version) return send(response, 409, { code: '40001', message: 'Version changed' });
+          app.version += 1;
+        } else {
+          assert.equal(body.p_version, null);
+          app = { ...workspace(account).apps[0], id: sourceId(2500 + createdApps.length), orgId, authorId: account.id, version: 1 };
+          createdApps.push(app);
+        }
+        const { generatedHtml, ...fields } = body.p_fields;
+        Object.assign(app, fields, { reviewStatus: 'pending_review', tech: ['HTML / JSON portable'], attachments: upload.files, ticket: `APP-${app.id.slice(-4)}` });
+        applicationSources.set(app.id, generatedHtml);
+        portableManifests.set(app.id, { uploadId: body.p_upload, files: upload.files });
+        upload.submitted = true;
+        return send(response, 200, { id: app.id });
+      }
+      throw new Error(`Unexpected portable RPC ${action}`);
+    }
     if (url.pathname === '/api/database/records/users') {
       assert.equal(token, environment.INSFORGE_API_KEY);
       if (state.empty) return send(response, 200, []);
@@ -140,6 +253,12 @@ const backend = http.createServer(async (request, response) => {
     }
     if (['/api/database/records/apps', '/api/database/records/app_versions'].includes(url.pathname)) {
       assert.ok(account?.enabled && account.verified, 'Source must use the authenticated user token');
+      if (url.searchParams.get('select') === 'version,author_id,review_status') {
+        assert.equal(url.searchParams.get('deleted_at'), 'is.null');
+        const id = url.searchParams.get('id')?.replace(/^eq\./, '');
+        const app = createdApps.find(app => app.id === id && app.orgId === orgId && !app.deletedAt);
+        return send(response, 200, app ? [{ version: app.version, author_id: app.authorId, review_status: app.reviewStatus }] : []);
+      }
       if (!url.searchParams.has('author_id')) {
         const versions = url.pathname.endsWith('/app_versions');
         const id = url.searchParams.get(versions ? 'app_id' : 'id')?.replace(/^eq\./, '');
@@ -179,6 +298,18 @@ const backend = http.createServer(async (request, response) => {
     if (url.pathname === '/api/database/rpc/tk_command') {
       assert.ok(account?.enabled && account.verified);
       commands.push({ ...body, role: account.role });
+      if (body.p_action === 'reviewApp') {
+        assert.ok(['admin', 'superadmin'].includes(account.role));
+        const app = createdApps.find(app => app.id === body.p_id && app.orgId === orgId);
+        assert.ok(app); assert.equal(body.p_version, app.version);
+        assert.ok(['pending_review', 'changes_requested'].includes(app.reviewStatus));
+        if (body.p_fields.action === 'approved') assert.deepEqual(body.p_fields.checks, { security: true, data: true });
+        app.reviewStatus = body.p_fields.action; app.environment = body.p_fields.environment;
+        applicationReviews.push({ id: sourceId(3000 + applicationReviews.length), appId: app.id, orgId, reviewerId: account.id,
+          action: app.reviewStatus, reason: body.p_fields.reason, environment: app.environment, version: app.version,
+          checks: body.p_fields.checks, createdAt: '2026-11-07T08:00:00Z' });
+        return send(response, 200, { id: app.id });
+      }
       if (body.p_action === 'updateOrganization') {
         assert.equal(account.role, 'superadmin');
         assert.equal(Object.hasOwn(body.p_fields, 'members'), false);
@@ -301,7 +432,7 @@ function stopOwnedTree(child) {
 }
 async function context() {
   const result = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await result.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+  await result.route('**/*', route => [base, environment.NEXT_PUBLIC_INSFORGE_URL].includes(new URL(route.request().url()).origin) ? route.continue() : route.abort());
   return result;
 }
 async function post(page, endpoint, body, origin = base) {
@@ -348,8 +479,8 @@ async function removeAccess(ctx) {
   return refresh;
 }
 async function run(name, operation) {
-  await operation();
-  console.log('PASS: ' + name);
+  try { await operation(); passed += 1; console.log('PASS: ' + name); }
+  catch (error) { failed += 1; console.error('FAIL: ' + name); throw error; }
 }
 async function bootstrap(resend = false) {
   const child = spawn(process.execPath, ['--conditions=react-server', '--import', 'tsx', path.join(root, 'scripts', 'bootstrap-insforge.mts'),
@@ -368,6 +499,7 @@ async function main() {
       NEXT_PUBLIC_INSFORGE_URL: `http://127.0.0.1:${backend.address().port}`, NEXT_PUBLIC_INSFORGE_ANON_KEY: 'synthetic-anon-key',
       INSFORGE_API_KEY: 'synthetic-admin-key', APP_URL: base, NEXT_PUBLIC_APP_URL: base,
     };
+    execFileSync(process.execPath, [path.join(root, 'scripts', 'sync-public.cjs')], { cwd: root, env: environment, stdio: 'ignore' });
     next = spawn(process.execPath, [require.resolve('next/dist/bin/next'), 'dev', '--webpack', '--hostname', '127.0.0.1', '--port', new URL(base).port],
       { cwd: root, env: environment, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
     const append = value => { logs = (logs + value.toString()).slice(-16000); };
@@ -381,6 +513,185 @@ async function main() {
     }
     assert.ok(ready, `Next not ready: ${logs}`);
     browser = await chromium.launch({ headless: true });
+    await run('Portable upload route and API enforce verified Studio roles and server-side HTML/JSON restrictions', async () => {
+      assert.equal((await fetch(base + '/api/studio/portable')).status, 401);
+      const guest = await context();
+      try {
+        const page = await guest.newPage(); await page.goto(base + '/studio/upload');
+        await page.waitForURL(url => url.pathname === '/login' && url.searchParams.get('next') === '/studio/upload');
+        await login(page, 'catalog', '/studio/upload');
+        await page.waitForURL(base + '/catalog');
+        await page.goto(base + '/studio/upload'); await page.waitForURL(base + '/catalog');
+        const before = portableCalls.length;
+        assert.equal((await post(page, '/api/studio/portable', { action: 'reserve', files: portableMetadata })).status, 403);
+        assert.equal((await page.request.get(base + `/api/studio/portable?appId=${sourceId(0)}&version=3`)).status(), 403);
+        assert.equal(portableCalls.length, before);
+      } finally { await guest.close(); }
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'developer', '/studio/upload');
+        await page.getByTestId('portable-workspace').waitFor();
+        const before = portableCalls.length;
+        for (const files of [
+          [{ name: 'script.js', type: 'text/html', size: 10 }],
+          [{ name: '../index.html', type: 'text/html', size: 10 }],
+          [{ name: 'index.html', type: 'application/json', size: 10 }],
+          [portableMetadata[1]], [portableMetadata[0], portableMetadata[0]],
+          [portableMetadata[0], { name: 'huge.json', type: 'application/json', size: 5242881 }],
+        ]) assert.equal((await post(page, '/api/studio/portable', { action: 'reserve', files })).status, 400);
+        assert.equal(portableCalls.length, before, 'Invalid file metadata must fail before reservation RPC');
+        const input = page.getByLabel('Seleccionar HTML y JSON', { exact: true });
+        assert.equal(await input.getAttribute('accept'), '.html,.json,text/html,application/json');
+        await input.setInputFiles({ name: 'forbidden.js', mimeType: 'text/javascript', buffer: Buffer.from('alert(1)') });
+        await page.getByRole('alert').getByText('Solo se admiten ficheros .html y .json.', { exact: true }).waitFor();
+        assert.equal(await page.locator('.portable-file-list li').count(), 0);
+        await input.setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{invalid') });
+        await page.getByRole('alert').getByText('El fichero bad.json no contiene JSON válido.', { exact: true }).waitFor();
+        assert.equal(await page.locator('.portable-file-list li').count(), 0);
+        assert.equal(await page.locator('.studio-chat, #promptInput').count(), 0);
+      } finally { await ctx.close(); }
+    });
+    await run('Portable finalization validates downloaded bytes and content before any submission RPC', async () => {
+      const ctx = await context();
+      try {
+        const page = await ctx.newPage(); await login(page, 'developer');
+        const fields = { title: 'Validation only', desc: 'Synthetic server-side content validation submission.', area: 'operations' };
+        const before = createdApps.length;
+        const cases = [
+          { files: [portableFiles[0], { name: 'data.json', type: 'application/json', content: '{invalid' }], status: 400 },
+          { files: [{ name: 'index.html', type: 'text/html', content: '   ' }], status: 400 },
+          { files: [{ name: 'con.html', type: 'text/html', content: '<html>Forbidden Windows basename</html>' }], status: 400 },
+          { files: portableFiles, missing: true, status: 409 },
+          { files: portableFiles, wrongSize: true, status: 409 },
+        ];
+        for (const test of cases) {
+          const files = test.files.map(file => ({ name: file.name, type: file.type, size: Buffer.byteLength(file.content) }));
+          const reservation = await post(page, '/api/studio/portable', { action: 'reserve', files });
+          assert.equal(reservation.status, 200, JSON.stringify(reservation.body));
+          const id = reservation.body.id;
+          for (const file of test.files) {
+            if (test.missing && file.type === 'application/json') continue;
+            portableObjects.set(`${id}/${file.name}`, { content: Buffer.from(file.content + (test.wrongSize ? ' ' : '')), type: file.type });
+          }
+          const submitted = portableCalls.filter(call => call.action === 'tk_portable_submit').length;
+          const result = await post(page, '/api/studio/portable', { action: 'submit', uploadId: id, fields });
+          assert.equal(result.status, test.status, JSON.stringify(result.body));
+          assert.equal(portableCalls.filter(call => call.action === 'tk_portable_submit').length, submitted);
+          assert.equal(portableUploads.get(id).submitted, false);
+        }
+        assert.equal(createdApps.length, before);
+      } finally { await ctx.close(); portableUploads.clear(); portableObjects.clear(); }
+    });
+    await run('Portable HTML/JSON drop preview saves authenticated assets, supports corrections and admin review, then launches offline from catalog', async () => {
+      const ctx = await context(), admin = await context(), catalog = await context();
+      let appId;
+      try {
+        const page = await ctx.newPage(); await login(page, 'developer', '/studio/upload');
+        await page.getByTestId('portable-workspace').waitFor();
+        const beforeStorage = storageCalls.length;
+        await page.locator('.portable-dropzone').evaluate((element, files) => {
+          const dataTransfer = new DataTransfer();
+          for (const file of files) dataTransfer.items.add(new File([file.content], file.name, { type: file.type }));
+          element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+        }, portableFiles);
+        const preview = page.frameLocator('.portable-preview iframe');
+        await preview.getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
+        assert.equal(storageCalls.length, beforeStorage, 'Preview must not upload any assets');
+        assert.equal(await page.locator('.portable-file-list li').count(), 2);
+        assert.equal(await page.locator('.portable-preview iframe').getAttribute('sandbox'), 'allow-scripts allow-downloads');
+        assert.equal(await preview.locator('body').evaluate(() => { try { void parent.document.body; return false; } catch { return true; } }), true);
+        await page.getByRole('button', { name: 'Código', exact: true }).click();
+        await page.locator('.portable-code select').selectOption('data.json');
+        assert.equal(await page.getByLabel('Código del fichero').innerText(), portableFiles[1].content);
+        await page.getByRole('button', { name: 'Vista previa', exact: true }).click();
+        await preview.getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
+        await preview.getByRole('button', { name: 'Increment', exact: true }).click();
+        await preview.getByText('Linked JSON ✓: 8', { exact: true }).waitFor();
+        await page.getByRole('button', { name: 'Reiniciar vista previa', exact: true }).click();
+        await preview.getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
+        await page.getByLabel('Título', { exact: true }).fill('Portable linked counter');
+        await page.getByLabel('Descripción (mínimo 30 caracteres)', { exact: true }).fill('Synthetic portable app with linked JSON and offline save/load.');
+        await page.getByLabel('Resumen (opcional)', { exact: true }).fill('Offline linked counter');
+        if (process.env.TEKTONIK_PORTABLE_PREVIEW_SCREENSHOT) await page.screenshot({ path: process.env.TEKTONIK_PORTABLE_PREVIEW_SCREENSHOT, fullPage: true });
+        await page.getByRole('button', { name: 'Enviar a IT', exact: true }).click();
+        await page.getByText('Enviado a revisión IT', { exact: true }).waitFor();
+        const app = createdApps.at(-1); appId = app.id;
+        assert.equal(app.title, 'Portable linked counter'); assert.equal(app.authorId, accounts[0].id);
+        assert.equal(app.reviewStatus, 'pending_review'); assert.deepEqual(app.attachments, portableMetadata);
+        const manifest = portableManifests.get(app.id);
+        assert.deepEqual(manifest.files, portableMetadata);
+        for (const file of portableFiles) assert.equal(portableObjects.get(`${manifest.uploadId}/${file.name}`).content.toString('utf8'), file.content);
+        const puts = storageCalls.slice(beforeStorage).filter(call => call.method === 'PUT');
+        assert.equal(puts.length, 2); assert.ok(puts.every(call => call.role === 'developer' && call.origin === base), 'Assets must upload directly from browser with user auth');
+        assert.ok(storageCalls.slice(beforeStorage).some(call => call.method === 'GET' && call.role === 'developer' && !call.origin), 'Server must download pending assets for validation');
+        const getManifest = (target, version = app.version) => target.request.get(`${base}/api/studio/portable?appId=${app.id}&version=${version}`);
+        assert.equal((await getManifest(page)).status(), 403, 'Developer cannot fetch pending review bundle for editing');
+        assert.equal((await page.request.get(`${base}/api/apps/source?appId=${app.id}&version=1`)).status(), 404);
+        const adminPage = await admin.newPage(); await login(adminPage, 'admin', '/admin');
+        const row = adminPage.locator('.business-app-card').filter({ hasText: app.title });
+        await row.getByRole('button', { name: 'Solicitar cambios', exact: true }).click();
+        await adminPage.getByRole('dialog').getByLabel('Motivo obligatorio', { exact: true }).fill('Revise the portable metadata before approval.');
+        await adminPage.getByRole('dialog').getByRole('button', { name: 'Solicitar cambios', exact: true }).click();
+        await adminPage.getByRole('dialog').waitFor({ state: 'hidden' });
+        assert.equal(app.reviewStatus, 'changes_requested');
+        assert.equal((await getManifest(page)).status(), 200);
+        assert.equal((await getManifest(page, 2)).status(), 409);
+        await page.goto(base + '/profile'); await page.getByRole('button', { name: 'Mis envíos', exact: true }).click();
+        const editLink = page.locator(`a[href="/studio/upload?edit=${app.id}"]`);
+        await editLink.click();
+        await page.getByRole('heading', { name: 'Corregir aplicación portable', exact: true }).waitFor();
+        await preview.getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
+        await page.getByLabel('Título', { exact: true }).fill('Portable linked counter revised');
+        await page.getByRole('button', { name: 'Enviar cambios a IT', exact: true }).click();
+        await page.getByText('Enviado a revisión IT', { exact: true }).waitFor();
+        assert.equal(app.version, 2); assert.equal(app.reviewStatus, 'pending_review');
+        assert.equal(portableCalls.at(-1).action, 'tk_portable_submit');
+        assert.equal(portableCalls.at(-1).p_id, app.id); assert.equal(portableCalls.at(-1).p_version, 1);
+        await adminPage.reload();
+        await row.getByRole('link', { name: 'Revisar HTML / JSON', exact: true }).click();
+        await adminPage.getByRole('heading', { name: 'Revisar aplicación portable', exact: true }).waitFor();
+        await adminPage.frameLocator('.portable-preview iframe').getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
+        assert.equal(await adminPage.getByRole('button', { name: 'Enviar a IT', exact: true }).count(), 0);
+        assert.equal(await adminPage.getByRole('button', { name: 'Quitar data.json', exact: true }).count(), 0);
+        await adminPage.getByRole('button', { name: /^data\.json Datos JSON/ }).click();
+        assert.equal(await adminPage.getByLabel('Código del fichero').innerText(), portableFiles[1].content);
+        await adminPage.getByRole('link', { name: 'Volver a revisión IT', exact: true }).click();
+        await row.getByRole('button', { name: 'Aprobar', exact: true }).click();
+        const dialog = adminPage.getByRole('dialog');
+        await dialog.getByRole('checkbox').nth(0).check(); await dialog.getByRole('checkbox').nth(1).check();
+        await dialog.getByLabel('Comentario de revisión', { exact: true }).fill('Checked isolated HTML and linked JSON.');
+        await dialog.getByRole('button', { name: 'Aprobar', exact: true }).click();
+        await dialog.waitFor({ state: 'hidden' });
+        assert.equal(app.reviewStatus, 'approved');
+        assert.equal(applicationReviews.at(-1).reviewerId, accounts[2].id);
+        const catalogPage = await catalog.newPage(); await login(catalogPage, 'catalog', '/catalog');
+        const card = catalogPage.locator('.business-app-card').filter({ has: catalogPage.getByRole('heading', { name: app.title, exact: true }) });
+        await card.getByRole('button', { name: 'Acceder', exact: true }).click();
+        const launched = catalogPage.frameLocator('.application-frame');
+        await launched.getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
+        assert.equal(await catalogPage.locator('.application-frame').getAttribute('sandbox'), 'allow-scripts allow-downloads');
+        await launched.getByRole('button', { name: 'Increment', exact: true }).click();
+        await launched.getByText('Linked JSON ✓: 8', { exact: true }).waitFor();
+        const downloadEvent = catalogPage.waitForEvent('download');
+        await launched.getByRole('button', { name: 'Save JSON', exact: true }).click();
+        const download = await downloadEvent;
+        assert.equal(download.suggestedFilename(), 'saved.json');
+        const chunks = []; for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+        const saved = Buffer.concat(chunks);
+        assert.deepEqual(JSON.parse(saved.toString('utf8')), { ...portableData, count: 8 });
+        const stored = JSON.stringify([...portableObjects].map(([key, file]) => [key, file.content.toString('utf8')]));
+        await catalogPage.reload(); await launched.getByText('Linked JSON ✓: 7', { exact: true }).waitFor();
+        await launched.getByLabel('Load JSON', { exact: true }).setInputFiles({ name: 'saved.json', mimeType: 'application/json', buffer: saved });
+        await launched.getByText('Linked JSON ✓: 8', { exact: true }).waitFor();
+        assert.equal(JSON.stringify([...portableObjects].map(([key, file]) => [key, file.content.toString('utf8')])), stored, 'Runtime import must not overwrite submission assets');
+        assert.ok(storageCalls.some(call => call.role === 'admin' && call.method === 'GET' && call.origin === base));
+        assert.ok(storageCalls.some(call => call.role === 'catalog' && call.method === 'GET' && call.origin === base));
+      } finally {
+        await Promise.all([ctx.close(), admin.close(), catalog.close()]);
+        if (appId) { const index = createdApps.findIndex(app => app.id === appId); if (index >= 0) createdApps.splice(index, 1); applicationSources.delete(appId); portableManifests.delete(appId); }
+        portableUploads.clear(); portableObjects.clear(); applicationReviews.length = 0;
+      }
+    });
     await run('Homepage works without historical datasets and exposes only current public assets', async () => {
       const ctx = await context();
       try {
@@ -480,6 +791,7 @@ async function main() {
         await page.locator('.flow-orbit-caption strong').filter({ hasText: 'Mini app 12' }).waitFor();
         assert.equal(await page.locator('.flow-orbit-app').count(), 4);
         await page.getByRole('button', { name: 'Siguiente mini app', exact: true }).click();
+        await page.locator('.flow-orbit-caption strong').filter({ hasText: 'Mini app 01' }).waitFor();
         await page.getByRole('button', { name: 'Añadir a favoritos', exact: true }).click();
         await page.getByRole('button', { name: 'Quitar de favoritos', exact: true }).waitFor();
         await page.reload();
@@ -601,7 +913,7 @@ async function main() {
         const frame = page.frameLocator('.application-frame');
         await frame.locator('#dashboard-table tbody tr').first().waitFor();
         assert.deepEqual(JSON.parse(await frame.locator('#blk-dashboard-config').textContent()), kit.validate(sourceConfig));
-        assert.equal(await page.locator('.application-frame').getAttribute('sandbox'), 'allow-scripts');
+        assert.equal(await page.locator('.application-frame').getAttribute('sandbox'), 'allow-scripts allow-downloads');
         assert.equal(await page.locator('.application-frame').getAttribute('referrerpolicy'), 'no-referrer');
         assert.equal(await page.locator('.studio-chat, #promptInput, .studio-preview-toolbar').count(), 0);
         assert.equal(await page.locator('.top-bar').isVisible(), true);
@@ -892,10 +1204,12 @@ async function main() {
         assert.equal(await page.getByRole('heading', { name: 'De idea a herramienta', exact: true }).count(), 0);
         assert.equal(await page.getByRole('button', { name: /Exportar.*JSON/ }).count(), 0);
         assert.match(await page.locator('.studio-top-status').innerText(), /Nuevo borrador/);
-        const toolbar = await page.locator('.studio-toolbar').boundingBox(), add = await page.getByRole('button', { name: 'Añadir ficheros', exact: true }).boundingBox();
-        assert.ok(add.x > toolbar.x + toolbar.width / 2, 'File control should be on the right');
+        const uploadLink = page.getByRole('link', { name: 'Añadir ficheros', exact: true });
+        assert.equal(await uploadLink.getAttribute('href'), '/studio/upload');
+        const toolbar = await page.locator('.studio-toolbar').boundingBox(), add = await uploadLink.boundingBox();
+        assert.ok(add.x > toolbar.x + toolbar.width / 2, 'Upload control should be on the right');
         const chooser = page.waitForEvent('filechooser');
-        await page.getByRole('button', { name: 'Añadir ficheros', exact: true }).click();
+        await page.getByRole('button', { name: 'Referencias del borrador', exact: true }).click();
         await (await chooser).setFiles({ name: 'design.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic reference content not imported') });
         await page.getByRole('button', { name: 'Quitar design.txt', exact: true }).waitFor();
         assert.match(await page.locator('.studio-attachments').innerText(), /Solo referencias/);
@@ -1213,6 +1527,7 @@ async function main() {
     console.error(logs);
     throw error;
   } finally {
+    console.log(`Browser/auth coverage: ${passed} passed, ${failed} failed.`);
     if (browser) await browser.close();
     stopOwnedTree(next);
     backend.closeAllConnections();

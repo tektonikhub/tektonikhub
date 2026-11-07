@@ -22,6 +22,7 @@ El flujo de trabajo comprende creación, envío a revisión, solicitud de cambio
 | Perfil y envíos | `/profile` |
 | Organización y gestión | `/company` |
 | Creación conversacional | `/studio` |
+| Subir y previsualizar HTML / JSON | `/studio/upload` |
 | Oficina de IA | `/admin` |
 | Administración global | `/super-admin` |
 
@@ -67,11 +68,11 @@ React / hooks → BLKProvider → RemoteBLKRepository → API Next.js
 
 Las rutas protegidas verifican identidad y rol en el servidor. Las operaciones de negocio se autorizan mediante PostgreSQL, con aislamiento por organización, restricciones de relaciones y control de versiones concurrentes. Archivar conserva el historial de revisiones y eventos.
 
-Studio guarda el HTML enviado en `app_versions`. Para corregir una entrega, `/api/studio/source` recupera exclusivamente la versión autorizada, comprobando autor, empresa y estado. La sincronización cloud de conversaciones, la carga de binarios y un sandbox de ejecución de servidor siguen pendientes. Los documentos generados se previsualizan en un iframe aislado; esto no constituye una certificación de seguridad.
+Studio guarda el HTML enviado en `app_versions`. Para corregir una entrega, `/api/studio/source` recupera exclusivamente la versión autorizada, comprobando autor, empresa y estado. La sincronización cloud de conversaciones, la carga de otros tipos de binarios y un sandbox de ejecución de servidor siguen pendientes. Los documentos generados se previsualizan en un iframe aislado; esto no constituye una certificación de seguridad.
 
 En `/studio`, la descripción escrita en el chatbot inicia la creación, sin elegir un proyecto de InsForge, un proveedor o una plantilla obligatoria. No se muestra ni se genera un registro de actividad del proyecto; se mantienen la conversación, las versiones y los borradores existentes. Las nuevas generaciones requieren el LLM configurado para la organización: no hay generación demo ni sustitución automática por plantillas locales. El servicio actual solo admite dashboards declarativos con datos sintéticos.
 
-La interfaz se centra en conversación y vista previa, sin encabezado grande ni panel inferior de archivos. Una barra compacta arriba a la derecha reúne el estado del borrador, el indicador LLM, el reinicio y «Añadir ficheros». El indicador solo aparece verde tras confirmar la configuración de la organización; el texto al pasar el ratón o enfocar explica el estado, y pulsarlo reintenta la comprobación. También se actualiza al volver a la ventana. Los ficheros aparecen como referencias eliminables junto al chat: únicamente se guardan sus metadatos, no se carga ni se lee su contenido. Las opciones de preview, copia y exportación HTML se agrupan en «Más opciones»; no hay exportación habitual de borradores JSON. La recuperación del original se conserva únicamente ante fallos de almacenamiento.
+La interfaz se centra en conversación y vista previa, sin encabezado grande ni panel inferior de archivos. Una barra compacta arriba a la derecha reúne el estado del borrador, el indicador LLM, el reinicio y «Añadir ficheros». El indicador solo aparece verde tras confirmar la configuración de la organización; el texto al pasar el ratón o enfocar explica el estado, y pulsarlo reintenta la comprobación. También se actualiza al volver a la ventana. «Añadir ficheros» abre `/studio/upload`, un espacio separado para subir aplicaciones portables. Las referencias antiguas junto al chat siguen siendo metadatos y no se convierten automáticamente en assets. Las opciones de preview, copia y exportación HTML se agrupan en «Más opciones»; no hay exportación habitual de borradores JSON. La recuperación del original se conserva únicamente ante fallos de almacenamiento.
 
 El proyecto cloud **`tektonik-hub`** está en **EU Central (`eu-central`)**. Su backend es `https://vxpd968k.eu-central.insforge.app`; se administra desde el [panel de InsForge](https://insforge.dev/dashboard/project/621de563-b6b4-4041-b541-579e6128a916).
 
@@ -80,6 +81,20 @@ El esquema base es `migrations/20261101075915_identity-workspace.sql`, con 15 ta
 `migrations/20261101182647_mi-flow.sql` añade `user_flow_apps`, lectura privada con RLS y RPC que obtienen la identidad del servidor y comprueban organización y aprobación. No cambia los datos de las tablas existentes ni importa apps del HTML de referencia.
 
 `migrations/20261101194802_catalog-app-access.sql` permite leer la versión actual de las apps aprobadas de la organización activa para «Acceder». Conserva los permisos de historial de creadores y administradores; no publica versiones anteriores ni concede escritura al catálogo.
+
+## Aplicaciones HTML / JSON portables
+
+Desde **Studio → Añadir ficheros**, arrastra ficheros o selecciónalos: exactamente un `.html` y, opcionalmente, sus `.json`. No se admiten otros tipos, carpetas ni nombres duplicados. Máximo: 10 ficheros, HTML de 300.000 caracteres, cada JSON de 5 MiB y conjunto de 25 MiB. Usa nombres simples de hasta 120 caracteres (letras ASCII, números, espacios, guiones, puntos y guiones bajos), sin rutas ni `..`.
+
+La vista previa ofrece escritorio, móvil, reinicio y código. Los scripts internos conservan `fetch('./datos.json')`, `fetch(new Request('./datos.json'))` y XHR local. También funcionan los selectores de fichero y `FileReader` para importar un JSON del equipo y las descargas `Blob` para guardar resultados. `window.TektonikFiles.list()`, `.read(nombre)` y `.exportJSON(nombre, valor)` ofrecen acceso explícito al bundle. Bibliotecas, imágenes, fuentes o APIs externas no se cargan: las dependencias deben estar integradas en el HTML. No se admiten módulos externos ni servidores por miniapp.
+
+El iframe usa `allow-scripts allow-downloads`, nunca `allow-same-origin`: no tiene acceso a las cookies del hub. El almacenamiento local de la miniapp es temporal en memoria y se reinicia con el preview; **los cambios en los JSON no se sincronizan automáticamente con InsForge**. Guarda una descarga para conservar resultados. La previsualización ejecuta el mismo runtime que el catálogo.
+
+Al enviar, se reserva un manifiesto pequeño y los originales se suben directamente con la sesión del usuario al bucket **privado** `portable-apps`, evitando el límite de cuerpo del hosting. El servidor descarga y valida el contenido antes de registrar atómicamente la aplicación y sus assets versionados. Las claves están ligadas a la reserva, al autor y a la organización, y los originales quedan inmutables desde su carga (sin sobrescritura ni eliminación desde cuentas de aplicación). Las cargas incompletas siguen privadas y no publicadas; su eliminación es mantenimiento del operador sobre reservas caducadas, nunca de bundles enviados. Las reservas caducan en una hora y se limitan a 30 por cuenta y día; un fallo no publica una app incompleta. Ante una respuesta incierta, consulta Perfil antes de repetir.
+
+Admin puede abrir la previsualización desde la revisión; la aprobación incorpora inmediatamente esa versión al catálogo y Mi Flow de la organización. «Solicitar cambios» permite al autor recuperar el bundle, sustituir ficheros y reenviar una nueva versión. Los cambios administrativos de metadatos que conservan el HTML mantienen sus JSON. El rol `catalog` no puede subir ni revisar, y solo descarga assets de la versión actualmente aprobada. Archivar o retirar la aprobación revoca ese acceso.
+
+Las migraciones `20261107072737_portable-app-assets.sql`, `20261107073123_portable-upload-finalization.sql`, `20261107073708_portable-storage-finalize-privileges.sql`, `20261107073757_portable-storage-insert-only.sql` y `20261107075200_portable-html-storage-mime.sql` añaden reservas, referencias versionadas, RPC y políticas RLS restrictivas sobre `storage.objects`. InsForge normaliza el MIME de HTML a `application/octet-stream`; solo se acepta esa equivalencia para el HTML reservado, sin relajar tamaño, nombre, autor ni inmutabilidad. Verifica `portable-apps` privado en cada entorno; si falta, créalo con `npx -y @insforge/cli@latest storage create-bucket portable-apps --private`. Una fusión de rama backend puede copiar su configuración, pero no sus objetos. Nunca conviertas este bucket en público. No se importan apps ni datos históricos.
 
 ## Despliegue
 

@@ -101,7 +101,7 @@ test('Catalog and Mi Flow access share the Studio sandbox without the conversati
   const view = readFileSync(resolve('components', 'features', 'application-view.tsx'), 'utf8');
   assert.match(view, /approvedCatalogApps\(data, org\)/);
   assert.match(view, /isolatedHTML\(html\)/);
-  assert.match(view, /sandbox="allow-scripts"/);
+  assert.match(view, /sandbox="allow-scripts allow-downloads"/);
   assert.match(view, /referrerPolicy="no-referrer"/);
   assert.doesNotMatch(view, /allow-same-origin|dangerouslySetInnerHTML|localStorage|useStudio|StudioWorkspace|loadEngines/);
   const route = readFileSync(resolve('app', 'api', 'apps', 'source', 'route.ts'), 'utf8');

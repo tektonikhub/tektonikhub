@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { Ellipsis, Paperclip, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -26,7 +27,8 @@ export function StudioWorkspace(){
           <span id="studio-llm-tooltip" className="studio-tooltip" role="tooltip">{studio.llmConnection.message}</span>
         </span>
         <Button variant="ghost" className="studio-small-button" aria-label="Nuevo borrador" title="Nuevo borrador" onClick={()=>setResetOpen(true)} disabled={busy||!studio.ready}><RotateCcw size={16} aria-hidden="true"/></Button>
-        <Button variant="ghost" className="studio-small-button" onClick={()=>fileInput.current?.click()} disabled={!studio.ready||busy} title="Añadir ficheros de referencia; no se lee su contenido" aria-describedby="studio-files-help"><Paperclip size={16} aria-hidden="true"/>Añadir ficheros</Button>
+        <Link className="btn btn-ghost studio-small-button" href="/studio/upload" title="Subir HTML y JSON para revisión IT"><Paperclip size={16} aria-hidden="true"/>Añadir ficheros</Link>
+        <Button variant="ghost" className="studio-small-button" onClick={()=>fileInput.current?.click()} disabled={!studio.ready||busy} title="Añadir referencias al borrador; no se lee su contenido" aria-describedby="studio-files-help">Referencias del borrador</Button>
         <input ref={fileInput} type="file" multiple hidden aria-label="Seleccionar ficheros de referencia" disabled={!studio.ready||busy} onChange={event=>{studio.setFiles(event.target.files);event.target.value='';}}/>
         <span id="studio-files-help" className="studio-sr-only">Solo se guardan nombres, tipos y tamaños; no se sube ni se lee el contenido. Máximo {Math.max(0,studio.blk.data.config.upload.maxFiles-1)} ficheros y {(studio.blk.data.config.upload.maxBytes/1024/1024).toFixed(0)} MB.</span>
         {current&&<Button variant="primary" className="studio-small-button" onClick={openReview} disabled={busy||!!draft.submission}>{draft.submission?'Enviado a IT':'Enviar a IT'}</Button>}
